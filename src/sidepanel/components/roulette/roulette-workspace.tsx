@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { KimQuadrantId, KIMS_ALGO_QUADRANTS, SAMPLE_SPIN_TAPE } from '../../../lib/roulette'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { SAMPLE_SPIN_TAPE } from '../../../lib/roulette'
 import type { PanelStatus } from '../../../types'
 import type { RouletteStoredData, TableState } from '../../../types/roulette'
 import { Analytics } from './roulette-analytics'
@@ -29,10 +29,53 @@ export function RouletteWorkspace({
   evolutionLobbyHistories,
   onReset
 }: RouletteWorkspaceProps) {
-  const [startingQuadrant, setStartingQuadrant] = useState<KimQuadrantId>('q1')
-  const [hoveredQuadrant, setHoveredQuadrant] = useState<KimQuadrantId | null>(null)
-  const [selectedStartingQuadrantNumbers, setSelectedStartingQuadrantNumbers] = useState<Set<number>>(new Set())
-  const [hoveredQuadrantNumbers, setHoveredQuadrantNumbers] = useState<Set<number>>(new Set())
+  // ── Live winning-numbers sequence ─────────────────────────────────────────
+  // evolutionRecentNumbers is newest-first (DOM-scraped, always fresh).
+  // We build a growing oldest-first sequence by detecting new spins as the
+  // head of evolutionRecentNumbers changes. This is more reliable than waiting
+  // for websocket-captured stored results, which can fail when Evolution runs
+  // in a cross-origin iframe.
+  const prevRecentRef = useRef<number[]>([])
+  const [liveWinningNumbers, setLiveWinningNumbers] = useState<number[]>([])
+
+  useEffect(() => {
+    const prev = prevRecentRef.current
+    const curr = evolutionRecentNumbers
+    prevRecentRef.current = curr
+
+    if (curr.length === 0) return
+
+    if (prev.length === 0) {
+      // First non-empty update — seed with reversed recent (oldest-first)
+      setLiveWinningNumbers([...curr].reverse())
+      return
+    }
+
+    if (curr[0] === prev[0]) return // No new spin
+
+    // Detect how many new numbers appeared at the front (usually 1)
+    const prevHeadIdx = curr.indexOf(prev[0])
+    const newCount = prevHeadIdx >= 0 ? prevHeadIdx : 1
+    const newSpins = curr.slice(0, newCount).reverse() // oldest-first
+    setLiveWinningNumbers((w) => [...w, ...newSpins])
+  }, [evolutionRecentNumbers])
+
+  const storedNumbers = useMemo(
+    () => stats.results.map((r) => r.winningNumber),
+    [stats.results]
+  )
+
+  // liveWinningNumbers is preferred; fall back to stored when live is empty
+  const winningNumbers = liveWinningNumbers.length > 0 ? liveWinningNumbers : storedNumbers
+
+  // Reseed live sequence and clear stored results together
+  const handleReset = useCallback(() => {
+    onReset()
+    const seed = [...evolutionRecentNumbers].reverse()
+    setLiveWinningNumbers(seed)
+    prevRecentRef.current = evolutionRecentNumbers
+  }, [onReset, evolutionRecentNumbers])
+
   const recentSpins = stats.results.slice(-10).reverse()
   const previewSpins =
     evolutionRecentNumbers.length > 0
@@ -41,23 +84,7 @@ export function RouletteWorkspace({
         ? recentSpins.map((result) => result.winningNumber)
         : SAMPLE_SPIN_TAPE
 
-  const handleQuadrantClick = (quadrant: KimQuadrantId) => {
-    setStartingQuadrant(quadrant)
-    const numbers = new Set(KIMS_ALGO_QUADRANTS[quadrant])
-    setSelectedStartingQuadrantNumbers(numbers)
-  }
-
-  const handleQuadrantHover = (quadrant: KimQuadrantId | null) => {
-    setHoveredQuadrant(quadrant)
-    if (quadrant) {
-      const numbers = new Set(KIMS_ALGO_QUADRANTS[quadrant])
-      setHoveredQuadrantNumbers(numbers)
-    } else {
-      setHoveredQuadrantNumbers(new Set())
-    }
-  }
   const latestSpin = recentSpins[0] ?? null
-  const winningNumbers = stats.results.map((result) => result.winningNumber)
 
   return (
     <div className='space-y-0 pb-6 bg-[#1F2020]'>
@@ -70,7 +97,7 @@ export function RouletteWorkspace({
         evolutionBettingOpen={evolutionBettingOpen}
         evolutionTableState={evolutionTableState}
       />
-      <Analytics winningNumbers={winningNumbers} lobbyHistories={evolutionLobbyHistories} onReset={onReset} />
+      <Analytics lobbyHistories={evolutionLobbyHistories} onReset={handleReset} results={stats.results} />
     </div>
   )
 }

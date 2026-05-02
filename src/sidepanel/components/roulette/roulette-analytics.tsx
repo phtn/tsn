@@ -1,3 +1,4 @@
+import { RouletteSpinResult } from '@/src/types/roulette'
 import { FC, type ReactNode, useMemo } from 'react'
 import { BLACK_NUMBERS, ORPHELINS_G, RED_NUMBERS, TIER_G, VOISINS_G } from '../../../lib/roulette'
 import { cn } from '../../../lib/utils'
@@ -9,14 +10,16 @@ export const cardClassName: ClassName = `border-zinc-800 bg-[linear-gradient(180
 type LobbyTableHistory = { tableId: string; numbers: number[] }
 
 type AnalyticsProps = {
-  winningNumbers?: readonly number[]
+  // winningNumbers?: readonly number[]
   lobbyHistories?: LobbyTableHistory[]
   onReset?: () => void
+  results: RouletteSpinResult[]
 }
 
-export const Analytics: FC<AnalyticsProps> = ({ winningNumbers = [], lobbyHistories = [], onReset }) => {
+export const Analytics: FC<AnalyticsProps> = ({ results, lobbyHistories = [], onReset }) => {
+  const winningNumbers = results.map((result) => result.winningNumber).flat()
   const stats = useMemo(() => {
-    const total = winningNumbers.length
+    const total = results.map((result) => result.winningNumber).length
     if (total === 0) {
       return {
         zero: { count: 0, pct: 0 },
@@ -129,10 +132,43 @@ export const Analytics: FC<AnalyticsProps> = ({ winningNumbers = [], lobbyHistor
 
   return (
     <div className='space-y-2 text-white p-1'>
-      <div className='mx-auto space-y-2'>
+      <div className='mx-auto space-y-1.5'>
+        {/* Hot & Cold Numbers */}
+        <div className={cn('grid grid-cols-2 gap-1 px-1 py-2 bg-neutral-950')}>
+          <div className={cn('')}>
+            <div className='flex flex-wrap gap-1.5'>
+              <div className='p-0.5 h-4'>
+                <span className='font-bold text-orange-300 text-xs uppercase'>H</span>
+              </div>
+              {stats.hotNumbers.length > 0 ? (
+                stats.hotNumbers.map(([num, count]) => (
+                  <NumberBadge key={num} number={num} count={count} isHot={true} />
+                ))
+              ) : (
+                <p className='text-neutral-500 text-sm'>Awaiting data...</p>
+              )}
+            </div>
+          </div>
+
+          <div className={cn('')}>
+            <div className='flex flex-wrap gap-1.5'>
+              <div className='p-0.5 h-4'>
+                <span className='font-bold text-cyan-400 text-xs uppercase'>c</span>
+              </div>
+              {stats.coldNumbers.length > 0 ? (
+                stats.coldNumbers.map(([num, count]) => (
+                  <NumberBadge key={num} number={num} count={count} isHot={false} />
+                ))
+              ) : (
+                <p className='text-neutral-500 text-sm'>No data yet</p>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Lobby History — one row per table */}
         {lobbyHistories.length > 0 && (
-          <div className={cn('rounded-lg p-3 space-y-1', cardClassName)}>
+          <div className={cn('rounded-sm p-3 space-y-1 bg-neutral-900')}>
             {lobbyHistories.map(({ tableId, numbers }) => (
               <div key={tableId} className='flex items-center gap-3'>
                 <span className='text-xs uppercase text-neutral-200 min-w-48 shrink-0 truncate' title={tableId}>
@@ -145,7 +181,7 @@ export const Analytics: FC<AnalyticsProps> = ({ winningNumbers = [], lobbyHistor
                     ]
                   }
                 </span>
-                <div className='flex gap-0.5 bg-white/40 p-1 rounded-xs'>
+                <div className='flex gap-0.5 bg-white/40 p-0.5 rounded-xs'>
                   {numbers.slice(0, 10).map((n, i) => (
                     <LobbyNumber key={i} number={n} />
                   ))}
@@ -154,38 +190,6 @@ export const Analytics: FC<AnalyticsProps> = ({ winningNumbers = [], lobbyHistor
             ))}
           </div>
         )}
-        {/* Hot & Cold Numbers */}
-        <div className={cn('grid grid-cols-2 gap-1', cardClassName)}>
-          <div className={cn('rounded-lg p-2')}>
-            <div className='flex flex-wrap gap-1.5'>
-              <div className='-rotate-90 p-0.5 rounded-sm text-orange-300 text-xs h-4'>
-                <span className='font-bold uppercase'>hot</span>
-              </div>
-              {stats.hotNumbers.length > 0 ? (
-                stats.hotNumbers.map(([num, count]) => (
-                  <NumberBadge key={num} number={num} count={count} isHot={true} />
-                ))
-              ) : (
-                <p className='text-neutral-500 text-sm'>Awaiting data...</p>
-              )}
-            </div>
-          </div>
-
-          <div className={cn('rounded-lg p-2')}>
-            <div className='flex flex-wrap gap-1.5'>
-              <div className='-rotate-90 p-0.5 rounded-sm text-cyan-400 text-xs h-4'>
-                <span className='font-bold uppercase'>cold</span>
-              </div>
-              {stats.coldNumbers.length > 0 ? (
-                stats.coldNumbers.map(([num, count]) => (
-                  <NumberBadge key={num} number={num} count={count} isHot={false} />
-                ))
-              ) : (
-                <p className='text-neutral-500 text-sm'>No data yet</p>
-              )}
-            </div>
-          </div>
-        </div>
         {/* Recent Numbers Strip */}
         <div className='grid grid-cols-10 gap-1'>
           <VPctBar
@@ -218,7 +222,7 @@ export const Analytics: FC<AnalyticsProps> = ({ winningNumbers = [], lobbyHistor
         </div>
 
         {/* Stats Overview */}
-        <div className='grid grid-cols-4 gap-1 bg-neutral-700'>
+        <div className='grid grid-cols-4 gap-1'>
           <StatCard
             title='EVEN'
             value={`${stats.oddEven.even.pct.toFixed(1)}%`}
@@ -272,63 +276,21 @@ export const Analytics: FC<AnalyticsProps> = ({ winningNumbers = [], lobbyHistor
           </div>
         </div>
 
-        {/* Number Frequency Heatmap */}
-        {winningNumbers.length > 0 && (
-          <div className={cn('rounded-lg p-4', cardClassName)}>
-            <div className='flex items-center gap-2 mb-6'>
-              {/*<BarChart3 size={20} className='text-emerald-400' />*/}
-              {/*<Icon name='re-up.ph' className='text-white size-4' />*/}
-              <h2 className='font-clash font-semibold text-white uppercase'>Frequency</h2>
-            </div>
-            <div className='grid grid-cols-10 sm:grid-cols-13 md:grid-cols-19 gap-2'>
-              {Array.from({ length: 37 }, (_, i) => i).map((num) => {
-                const count = stats.numberCounts.get(num) || 0
-                const maxCount = Math.max(...Array.from(stats.numberCounts.values()))
-                const intensity = maxCount > 0 ? count / maxCount : 0
+        {/*<Racetrack results={results} />*/}
 
-                return (
-                  <div
-                    key={num}
-                    className={`relative aspect-square rounded-lg flex flex-col items-center justify-center text-xs font-bold transition-all duration-300 hover:scale-110 ${
-                      num === 0 ? 'bg-emerald-600' : RED_NUMBERS.includes(num) ? 'bg-rose-600' : 'bg-neutral-600'
-                    }`}
-                    style={{
-                      opacity: 0.3 + intensity * 0.7,
-                      boxShadow:
-                        intensity > 0.5
-                          ? `0 0 ${intensity * 20}px ${num === 0 ? 'rgba(16, 185, 129, 0.5)' : RED_NUMBERS.includes(num) ? 'rgba(244, 63, 94, 0.5)' : 'rgba(100, 116, 139, 0.5)'}`
-                          : 'none'
-                    }}>
-                    <span>{num}</span>
-                    {count > 0 && <span className='text-[10px] opacity-75'>{count}</span>}
-                  </div>
-                )
-              })}
-            </div>
-            <div className='flex items-center justify-center gap-2 mt-4'>
-              <span className='text-xs text-neutral-500'>Cold</span>
-              <div className='flex gap-0.5'>
-                {[0.3, 0.5, 0.7, 0.9, 1].map((opacity, idx) => (
-                  <div key={idx} className='w-6 h-3 bg-emerald-500 rounded' style={{ opacity }} />
-                ))}
-              </div>
-              <span className='text-xs text-neutral-500'>Hot</span>
-            </div>
-          </div>
-        )}
         {/* RESET */}
         <div className={cn('rounded-lg border border-white/8 p-4', cardClassName)}>
-          <div className='flex items-start justify-between gap-4'>
+          <div className='flex items-end justify-between gap-4'>
             <div className='space-y-1'>
               <p className='text-[8px] font-display uppercase tracking-wide text-neutral-500'>roulette</p>
-              <h1 className='font-okx text-lg font-semibold uppercase text-white'>Analytics</h1>
+              <h1 className='font-okx text-base font-semibold uppercase text-white'>Analytics</h1>
             </div>
             <button
               type='button'
               onClick={onReset}
               disabled={winningNumbers.length === 0}
-              className='rounded-full border border-white/12 bg-white/5 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.24em] text-neutral-200 transition hover:border-white/25 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40'>
-              Reset
+              className='rounded-full border border-white/12 bg-white/5 px-3 py-1.5 transition hover:border-white/25 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40'>
+              <span className='text-xs font-okx font-medium uppercase tracking-[0.24em] text-neutral-200'>Reset</span>
             </button>
           </div>
           {winningNumbers.length > 0 && (
@@ -340,7 +302,7 @@ export const Analytics: FC<AnalyticsProps> = ({ winningNumbers = [], lobbyHistor
         </div>
         {/* Footer */}
         <div className='text-center py-4'>
-          <p className='text-neutral-500 text-xs'>European Roulette Analytics • Single Zero Wheel</p>
+          <p className='text-neutral-500 text-xs'>re-up.ph • v3.69</p>
         </div>
       </div>
     </div>
@@ -363,7 +325,7 @@ const STAT_VALUE_CLASS_NAME: Record<NonNullable<StatCardProps['color']>, string>
 }
 
 const StatCard: FC<StatCardProps> = ({ title, value, trend, color = 'emerald' }) => (
-  <div className={cn('rounded-sm p-2 bg-neutral-900/20')}>
+  <div className={cn('rounded-sm p-2 bg-neutral-700')}>
     <div className='flex items-center justify-between'>
       <span className='text-xs font-ios text-neutral-400 uppercase tracking-wider'>{title}</span>
       {/*{icon && <span className={`text-${color}-400`}>{icon}</span>}*/}
@@ -411,9 +373,9 @@ const PercentageBar: FC<PercentageBarProps> = ({ label, percentage, color, count
 )
 const VPctBar: FC<PercentageBarProps & { cols?: string }> = ({ label, percentage, color, count, cols }) => (
   <div className={cn('group', cols)}>
-    <div className={cn('relative h-16 bg-neutral-700/50 rounded-t-sm overflow-hidden flex items-end')}>
+    <div className={cn('relative h-16 bg-neutral-700 rounded-t-sm overflow-hidden flex items-end')}>
       <div
-        className={`w-full ${color} rounded-md rounded-b-none transition-all duration-700 ease-out group-hover:shadow-lg`}
+        className={`w-full ${color} rounded-xs rounded-b-none transition-all duration-700 ease-out group-hover:shadow-lg`}
         style={{ height: `${Math.min(percentage, 100) + 0.33}%` }}
       />
 
@@ -438,14 +400,14 @@ interface NumberBadgeProps {
 const NumberBadge: FC<NumberBadgeProps> = ({ number, count, isHot = true, showCount = true }) => {
   const getColor = (num: number) => {
     if (num === 0) return 'bg-linear-to-br from-emerald-500 to-emerald-600'
-    if (RED_NUMBERS.includes(num)) return 'bg-linear-to-br from-[#B51B13] to-rose-600'
+    if (RED_NUMBERS.includes(num)) return 'bg-linear-to-br from-[#B51B13] to-rose-600/80'
     return 'bg-linear-to-br from-neutral-600 to-neutral-700'
   }
 
   return (
     <div className='relative group'>
       <div
-        className={`w-7 h-6 ${getColor(number)} rounded-sm flex items-center justify-center font-semibold text-white hover:scale-110 hover:shadow-lg ${isHot ? 'hover:shadow-rose-500/20' : 'hover:shadow-cyan-500/20'}`}>
+        className={`w-7 h-5.5 ${getColor(number)} rounded-xs flex items-center justify-center font-semibold text-white hover:scale-110 hover:shadow-lg ${isHot ? 'hover:shadow-rose-500/20' : 'hover:shadow-cyan-500/20'}`}>
         <span className='font-semibold text-base'>{number}</span>
       </div>
       {showCount && (

@@ -24,7 +24,8 @@ interface ChipStackProps {
   onUndo?: VoidFunction
   /** Only pass this when Evolution's rebet button is visible; omit to hide the button. */
   onRebet?: VoidFunction
-  onDouble?: VoidFunction
+  onBetMultiply?: VoidFunction
+  betMultiplier?: number
   onTables?: VoidFunction
   tableState?: TableState | null
 }
@@ -34,8 +35,8 @@ export const ChipStack = ({
   onChipSelect,
   onUndo,
   onRebet,
-  onDouble,
-  onTables,
+  onBetMultiply,
+  betMultiplier,
   tableState
 }: ChipStackProps) => {
   const chips = useMemo(
@@ -134,7 +135,7 @@ export const ChipStack = ({
               id='table-state'
               style={{ viewTransitionName: 'table-state' }}
               className={cn(
-                'font-display font-semibold text-sm text-center uppercase py-0.5',
+                'font-display font-semibold text-sm text-center uppercase py-0.5 drop-shadow-xs',
                 {
                   'text-emerald-400': displayedLabel === 'OPEN',
                   'text-orange-300 animate-pulse': displayedLabel === 'CLOSING',
@@ -165,8 +166,15 @@ export const ChipStack = ({
             </button>
           )}
 
-          <button className='flex items-center space-x-2' onClick={onDouble} title='Double bets'>
-            <span className='font-semibold text-sm opacity-50'>2x</span>
+          <button id='multiply-bets' className='flex items-center' onClick={onBetMultiply} title='Multiply Bets'>
+            <span
+              className={cn(`flex items-center justify-center size-8 bg-no-repeat object-contain`)}
+              style={{
+                backgroundImage: 'url(./icons/gem-silver.svg)',
+                backgroundColor: 'transparent'
+              }}>
+              <span className='font-okx font-bold text-orange-600 text-lg tracking-tighter'>{betMultiplier}</span>
+            </span>
           </button>
 
           {/*<button

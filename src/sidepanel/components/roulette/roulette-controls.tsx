@@ -1,4 +1,6 @@
+import { useSFX } from '@/src/lib/sfx'
 import { cn } from '@/src/lib/utils'
+import { useEffect } from 'react'
 
 interface RouletteControlsProps {
   winVerb: string
@@ -39,6 +41,26 @@ export const RouletteControls = ({
   toggleTracking,
   betStatus
 }: RouletteControlsProps) => {
+  const { winSFX, startSFX } = useSFX()
+
+  useEffect(() => {
+    if (!isTracking && signalFound) {
+      startSFX()
+    }
+  }, [isTracking, signalFound, startSFX])
+
+  useEffect(() => {
+    if (isTracking) {
+      startSFX()
+    }
+  }, [isTracking, startSFX])
+
+  useEffect(() => {
+    if (lastWinProfit) {
+      winSFX()
+    }
+  }, [lastWinProfit, winSFX])
+
   return (
     <div className='flex items-center justify-between bg-zinc-950 py-3 px-3 rounded-s-lg shadow-inner'>
       <div className=''>

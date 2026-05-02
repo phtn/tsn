@@ -1,5 +1,6 @@
 import { cn } from '@/src/lib/utils'
 import { Dispatch, ReactNode, SetStateAction } from 'react'
+import { fmtAmt } from './utils'
 
 interface RouletteStatsProps {
   round: number
@@ -15,10 +16,10 @@ interface RouletteStatsProps {
   totalStaked: number
   nextBet: number
   winAmount: number
-  profitValue: number
-  profitPercent: number
+  lastWinProfit: number | null
   coverage: number
   coveragePercent: number
+  accPct: number
 }
 export const RouletteStats = ({
   round,
@@ -34,11 +35,12 @@ export const RouletteStats = ({
   totalStaked,
   nextBet,
   winAmount,
-  profitValue,
-  profitPercent,
+  lastWinProfit,
   coverage,
-  coveragePercent
+  coveragePercent,
+  accPct
 }: RouletteStatsProps) => {
+  const displayProfit = lastWinProfit ?? winAmount - totalStaked
   return (
     <div className='mt-2'>
       <div className='grid grid-cols-7 px-1 gap-1'>
@@ -48,7 +50,13 @@ export const RouletteStats = ({
         </Stat>
         <Stat>
           <div className='flex items-start justify-between'>
-            <span className='text-slate-400 text-[0.62rem] tracking-[0.2em] uppercase'>WS</span>
+            <span className='text-slate-400 text-[0.62rem] tracking-[0.2em] uppercase'>
+              WS&middot;
+              <span className='font-mono mtesxt-indigo-300'>
+                {accPct.toFixed(2)}
+                <span className='text-[6px]'>%</span>
+              </span>{' '}
+            </span>
             <span className='font-okx font-medium text-amber-300'>{accWinnings.toFixed(0)}</span>
           </div>
           <p className='mt-1.5 font-okx font-normal text-white text-lg'>{winStreak}</p>
@@ -100,12 +108,12 @@ export const RouletteStats = ({
           <p className=' text-slate-400 text-[0.62rem] tracking-[0.2em] uppercase'>
             Take &middot; <span className=' text-emerald-400 tracking-[0.2em]'>{winAmount}</span>
           </p>
-          <p className='mt-1.5 font-okx font-normal text-yellow-300 text-lg'>{fmtAmt(winAmount - totalStaked)}</p>
+          <p className='mt-1.5 font-okx font-normal text-yellow-300 text-lg'>{fmtAmt(displayProfit)}</p>
         </Stat>
         <Stat>
           <p className='text-[0.62rem] uppercase tracking-[0.2em] text-slate-400'>PCT</p>
           <p className='mt-1.5 text-lg font-normal text-indigo-300'>
-            {(((winAmount - totalStaked) / (baseUnit * 272)) * 100).toFixed(2)}
+            {((displayProfit / (baseUnit * 272)) * 100).toFixed(2)}
             <span className='text-[7px]'>%</span>
           </p>
         </Stat>
@@ -119,9 +127,6 @@ export const RouletteStats = ({
       </div>
     </div>
   )
-}
-function fmtAmt(n: number): string {
-  return Number.isInteger(n) ? String(n) : n.toFixed(2)
 }
 
 interface StatsProps {

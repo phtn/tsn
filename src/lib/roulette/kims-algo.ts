@@ -583,8 +583,10 @@ export function simulateKimsAlgo(spins: readonly number[], options: Partial<KimA
     // Use actually-placed numbers from Evolution when available; fall back to the
     // computed quadrantNumbers so the simulator still works without live data.
     const actualPlaced = resolvedOptions.placedNumbersPerStep?.[index]
+    // A win requires landing on a quadrant number (never a spread fill).
+    // In live mode also require the number was physically placed (guards missed spots).
     const hitQuadrant = actualPlaced
-      ? actualPlaced.includes(landedNumber)
+      ? bet.quadrantNumbers.includes(landedNumber) && actualPlaced.includes(landedNumber)
       : bet.quadrantNumbers.includes(landedNumber)
 
     console.log(

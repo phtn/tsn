@@ -1,7 +1,7 @@
 import * as esbuild from 'esbuild'
 import babel from 'esbuild-plugin-babel'
 import { execSync } from 'child_process'
-import { copyFileSync, existsSync, mkdirSync } from 'fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'fs'
 import { join } from 'path'
 
 const isDev = process.argv.includes('--dev')
@@ -34,10 +34,20 @@ function copyGeistFonts() {
   })
 }
 
+function copySFX() {
+  const sfxSrc = 'public/sfx'
+  const sfxDest = 'sfx'
+  mkdirSync(sfxDest, { recursive: true })
+  readdirSync(sfxSrc).forEach((file) => {
+    copyFileSync(join(sfxSrc, file), join(sfxDest, file))
+  })
+}
+
 // Process CSS with PostCSS - output to sidepanel.css to match HTML reference
 console.log('Processing CSS with PostCSS...')
 try {
   copyGeistFonts()
+  copySFX()
   execSync('bunx postcss src/global.css -o dist/sidepanel.css', { stdio: 'inherit' })
 } catch (error) {
   console.error('PostCSS processing failed:', error.message)
