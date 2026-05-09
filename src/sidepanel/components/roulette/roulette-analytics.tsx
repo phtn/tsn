@@ -151,9 +151,9 @@ export const Analytics: FC<AnalyticsProps> = ({ results, lobbyHistories = [], on
           </div>
 
           <div className={cn('')}>
-            <div className='flex flex-wrap gap-1.5'>
+            <div className='flex flex-wrap gap-1.5 justify-end'>
               <div className='p-0.5 h-4'>
-                <span className='font-bold text-cyan-400 text-xs uppercase'>c</span>
+                <span className='font-bold text-cyan-400 text-xs uppercase'>C</span>
               </div>
               {stats.coldNumbers.length > 0 ? (
                 stats.coldNumbers.map(([num, count]) => (

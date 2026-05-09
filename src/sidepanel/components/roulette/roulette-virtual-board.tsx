@@ -183,8 +183,7 @@ export function RouletteVirtualBoard({
     [lastResetIndex, nextBet, simulation]
   )
   // const recentSteps = simulation.steps.slice(-6).reverse()
-  const accPct =
-    lockedBankValue && lockedBankValue > 0 ? (accWinnings / (lockedBankValue + lockedBankValue / 2)) * 100 : 0
+  const accPct = lockedBankValue && lockedBankValue > 0 ? (accWinnings / lockedBankValue) * 100 : 0
 
   // Signal: 2 consecutive numbers share a quadrant — only meaningful when not armed
   const signalQuadrants = useMemo(() => {

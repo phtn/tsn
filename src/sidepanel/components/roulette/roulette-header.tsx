@@ -1,3 +1,4 @@
+import { Icon } from '@/src/lib/icons'
 import { getNumberTone } from '../../../lib/roulette/utils'
 import { cn } from '../../../lib/utils'
 import { RouletteSpinResult, RouletteStoredData } from '../../../types/roulette'
@@ -27,17 +28,21 @@ export const RouletteHeader = ({ stats, latestSpin, previewSpins }: RouletteHead
   const tableName = getTableName(latestSpin)
 
   return (
-    <section className='relative overflow-hidden rounded-xs border-t border-white/12 bg-[#1F2020] p-5 text-white'>
+    <section className='relative overflow-hidden rounded-xs border-t border-white/12 bg-[#1F2020] p-4 text-white'>
       <div className='absolute bottom-[-35%] right-[-16%] h-52 w-52 rounded-full bg-[radial-gradient(circle,rgba(239,68,68,0.28),transparent_68%)] blur-2xl' />
       <div className='relative'>
         <div className='flex items-start justify-between gap-4'>
           <div className='w-full'>
-            <p
-              id='provider'
-              className='font-line italic text-[0.62rem] uppercase tracking-[0.32em] text-emerald-100/70'>
-              {providerLabel}
-            </p>
-            <h2 id='table-name' className='mt-px font-display text-lg leading-none text-white'>
+            <div className='flex items-center space-x-0 h-4.5'>
+              <Icon name='evolution' className='size-4 opacity-40 rotate-180' />
+              <p
+                id='provider'
+                className='font-display text-[7px] italic uppercase tracking-[0.2em] leading-none text-gray-200/80'>
+                {providerLabel}
+              </p>
+            </div>
+
+            <h2 id='table-name' className='mt-px font-display font-medium text-sm leading-none text-white'>
               {tableName}
             </h2>
           </div>

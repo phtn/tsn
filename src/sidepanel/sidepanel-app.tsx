@@ -55,7 +55,7 @@ const App = () => {
   const [evolutionRecentNumbers, setEvolutionRecentNumbers] = useState<number[]>([])
   const [evolutionTableState, setEvolutionTableState] = useState<TableState | null>(null)
   const [evolutionLobbyHistories, setEvolutionLobbyHistories] = useState<{ tableId: string; numbers: number[] }[]>([])
-  const [activeGameClass, setActiveGameClass] = useState<GameClassView>('originals')
+  const [activeGameClass, setActiveGameClass] = useState<GameClassView>('roulette')
   const [showSettings, setShowSettings] = useState(false)
   // ─── loaders ──────────────────────────────────────────────────────────────
 
@@ -114,7 +114,9 @@ const App = () => {
         const lobbyHistories = Array.isArray(data.evolutionLobbyHistories)
           ? (data.evolutionLobbyHistories as unknown[]).filter(
               (v): v is { tableId: string; numbers: number[] } =>
-                typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>).tableId === 'string' &&
+                typeof v === 'object' &&
+                v !== null &&
+                typeof (v as Record<string, unknown>).tableId === 'string' &&
                 Array.isArray((v as Record<string, unknown>).numbers)
             )
           : []
@@ -126,7 +128,9 @@ const App = () => {
           setEvolutionRebetVisible(data.evolutionRebetVisible === true)
           setEvolutionBettingOpen(data.evolutionBettingOpen === true)
           setEvolutionRecentNumbers(recentNumbers as number[])
-          setEvolutionTableState(typeof data.evolutionTableState === 'string' ? data.evolutionTableState as TableState : null)
+          setEvolutionTableState(
+            typeof data.evolutionTableState === 'string' ? (data.evolutionTableState as TableState) : null
+          )
           setEvolutionLobbyHistories(lobbyHistories)
         })
       }

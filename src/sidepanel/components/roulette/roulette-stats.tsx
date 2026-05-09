@@ -45,32 +45,29 @@ export const RouletteStats = ({
     <div className='mt-2'>
       <div className='grid grid-cols-7 px-1 gap-1'>
         <Stat cols={1}>
-          <p className='text-[0.62rem] uppercase tracking-[0.2em] text-slate-400'>round</p>
+          <p className='text-[0.62rem] uppercase tracking-[0.2em] text-slate-400'>rd</p>
           <p className='mt-1.5 font-okx font-normal text-white text-lg'>{round}</p>
+        </Stat>
+        <Stat cols={1}>
+          <p className='text-[0.62rem] uppercase tracking-[0.2em] text-slate-400'>ws</p>
+          <p className='mt-1.5 font-okx font-normal text-white text-lg'>{winStreak}</p>
+        </Stat>
+        <Stat cols={1}>
+          <p className='text-[0.62rem] uppercase tracking-[0.2em] text-slate-400'>spin</p>
+          <p className='mt-1.5 text-lg font-normal text-white'>{spins}</p>
         </Stat>
         <Stat>
           <div className='flex items-start justify-between'>
-            <span className='text-slate-400 text-[0.62rem] tracking-[0.2em] uppercase'>
-              WS&middot;
-              <span className='font-mono mtesxt-indigo-300'>
-                {accPct.toFixed(2)}
-                <span className='text-[6px]'>%</span>
-              </span>{' '}
-            </span>
-            <span className='font-okx font-medium text-amber-300'>{accWinnings.toFixed(0)}</span>
+            <span className='text-slate-400 text-[0.62rem] tracking-[0.2em] uppercase'>bank</span>
+            <span className='font-okx font-medium text-pink-200'>{accPct.toFixed(1)}</span>
           </div>
-          <p className='mt-1.5 font-okx font-normal text-white text-lg'>{winStreak}</p>
+          <p className='mt-1.5 font-okx font-normal text-white text-lg'>{accWinnings.toFixed(0)}</p>
         </Stat>
-        <Stat>
-          <p className='text-[0.62rem] uppercase tracking-[0.2em] text-slate-400'>
-            spins &middot; <span className='text-emerald-400'>{spins}</span>
-          </p>
-          <p className='mt-1.5 text-lg font-normal text-white'>{steps}</p>
-        </Stat>
+
         <Stat>
           <div className='flex items-start justify-between'>
             <span
-              className={cn('text-[0.62rem] uppercase tracking-[0.2em] text-slate-400', {
+              className={cn('text-[0.62rem] uppercase tracking-widest text-slate-400', {
                 'font-medium text-indigo-300 opacity-100': inputMode === 'base'
               })}>
               {inputMode === 'base' ? `${baseUnit * 272}` : `unit = ${baseUnit.toFixed(2)}`}
@@ -105,10 +102,10 @@ export const RouletteStats = ({
           <p className='mt-1.5 text-lg font-normal text-white'>{fmtAmt(totalStaked)}</p>
         </Stat>
         <Stat>
-          <p className=' text-slate-400 text-[0.62rem] tracking-[0.2em] uppercase'>
-            Take &middot; <span className=' text-emerald-400 tracking-[0.2em]'>{winAmount}</span>
+          <p className=' text-slate-400 text-[0.62rem] tracking-[0.2em] uppercase whitespace-nowrap'>
+            Take &middot; <span className=' text-emerald-400 tracking-widest'>{winAmount}</span>
           </p>
-          <p className='mt-1.5 font-okx font-normal text-yellow-300 text-lg'>{fmtAmt(displayProfit)}</p>
+          <p className='mt-1.5 font-okx font-normal text-yellow-300 text-lg'>{fmtAmt(winAmount - totalStaked)}</p>
         </Stat>
         <Stat>
           <p className='text-[0.62rem] uppercase tracking-[0.2em] text-slate-400'>PCT</p>

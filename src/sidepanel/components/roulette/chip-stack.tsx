@@ -28,6 +28,7 @@ interface ChipStackProps {
   betMultiplier?: number
   onTables?: VoidFunction
   tableState?: TableState | null
+  isTracking?: boolean
 }
 
 export const ChipStack = ({
@@ -37,7 +38,8 @@ export const ChipStack = ({
   onRebet,
   onBetMultiply,
   betMultiplier,
-  tableState
+  tableState,
+  isTracking
 }: ChipStackProps) => {
   const chips = useMemo(
     () =>
@@ -117,7 +119,7 @@ export const ChipStack = ({
     <div className='' data-role='footer-perspective-chip-stack' data-is-collapsed='true'>
       <div className='' data-role='chip-stack-wrapper'>
         <div
-          className='bg-orange-100/0 py-4 flex items-center justify-center space-x-4'
+          className='bg-orange-100/0 py-4 flex items-center justify-center space-x-10'
           data-role='expanded-chip-stack-wrapper'>
           <style>{`
             @keyframes state-slide-up-in    { from { opacity:0; transform:translateY(-20px);  } to { opacity:1; transform:translateY(0); } }
@@ -147,9 +149,9 @@ export const ChipStack = ({
               {displayedLabel ?? '—'}
             </p>
           </div>
-          <button className='flex space-x-2' onClick={onUndo} title='Undo last bet'>
+          {/*<button className='flex space-x-2' onClick={onUndo} title='Undo last bet'>
             <Icon name='undo' className='size-4 opacity-50' />
-          </button>
+          </button>*/}
 
           <div data-role='chip-stack' className='flex space-x-2'>
             {chips.map((chip) => (
@@ -166,7 +168,12 @@ export const ChipStack = ({
             </button>
           )}
 
-          <button id='multiply-bets' className='flex items-center' onClick={onBetMultiply} title='Multiply Bets'>
+          <button
+            id='multiply-bets'
+            className='flex items-center'
+            disabled={isTracking}
+            onClick={onBetMultiply}
+            title='Multiply Bets'>
             <span
               className={cn(`flex items-center justify-center size-8 bg-no-repeat object-contain`)}
               style={{

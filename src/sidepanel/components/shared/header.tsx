@@ -65,13 +65,13 @@ export const MainHeader = ({ status, stats, latestGame, onGameClassChange, gameC
                     ? 'https://res.cloudinary.com/dx0heqhhe/image/upload/v1774084897/S_gx5txy.svg'
                     : 'https://res.cloudinary.com/dx0heqhhe/image/upload/v1774084886/88_vo2l7g.svg'
                 }
-                alt='Watchful Wind'
+                alt='369'
                 className='h-12 w-12 aspect-square'
               />
             </div>
             <div>
               <h1 className='font-display mt-1 text-lg font-bold leading-4 drop-shadow-px drop-shadow-black text-white!'>
-                Watchful Wind
+                3&middot;6&middot;9
               </h1>
             </div>
           </div>
