@@ -1,4 +1,3 @@
-import { RouletteSpinResult } from '@/src/types/roulette'
 import { FC, type ReactNode, useMemo } from 'react'
 import { BLACK_NUMBERS, ORPHELINS_G, RED_NUMBERS, TIER_G, VOISINS_G } from '../../../lib/roulette'
 import { cn } from '../../../lib/utils'
@@ -10,16 +9,16 @@ export const cardClassName: ClassName = `border-zinc-800 bg-[linear-gradient(180
 type LobbyTableHistory = { tableId: string; numbers: number[] }
 
 type AnalyticsProps = {
-  // winningNumbers?: readonly number[]
   lobbyHistories?: LobbyTableHistory[]
   onReset?: () => void
-  results: RouletteSpinResult[]
+  /** Oldest-first sequence used by live tracking and simulation. */
+  winningNumbers: readonly number[]
 }
 
-export const Analytics: FC<AnalyticsProps> = ({ results, lobbyHistories = [], onReset }) => {
-  const winningNumbers = results.map((result) => result.winningNumber).flat()
+export const Analytics: FC<AnalyticsProps> = ({ winningNumbers, lobbyHistories = [], onReset }) => {
+  const latestNumber = winningNumbers[winningNumbers.length - 1] ?? null
   const stats = useMemo(() => {
-    const total = results.map((result) => result.winningNumber).length
+    const total = winningNumbers.length
     if (total === 0) {
       return {
         zero: { count: 0, pct: 0 },
@@ -134,7 +133,7 @@ export const Analytics: FC<AnalyticsProps> = ({ results, lobbyHistories = [], on
     <div className='space-y-2 text-white p-1'>
       <div className='mx-auto space-y-1.5'>
         {/* Hot & Cold Numbers */}
-        <div className={cn('grid grid-cols-2 gap-1 px-1 py-2 bg-neutral-950')}>
+        <div className={cn('grid grid-cols-2 gap-1 px-1 py-2 bg-neutral-950/70 backdrop-blur-3xl')}>
           <div className={cn('')}>
             <div className='flex flex-wrap gap-1.5'>
               <div className='p-0.5 h-4'>
@@ -151,9 +150,9 @@ export const Analytics: FC<AnalyticsProps> = ({ results, lobbyHistories = [], on
           </div>
 
           <div className={cn('')}>
-            <div className='flex flex-wrap gap-1.5'>
+            <div className='flex flex-wrap justify-end gap-1.5'>
               <div className='p-0.5 h-4'>
-                <span className='font-bold text-cyan-400 text-xs uppercase'>c</span>
+                <span className='font-bold text-cyan-400 text-xs uppercase'>C</span>
               </div>
               {stats.coldNumbers.length > 0 ? (
                 stats.coldNumbers.map(([num, count]) => (
@@ -166,30 +165,6 @@ export const Analytics: FC<AnalyticsProps> = ({ results, lobbyHistories = [], on
           </div>
         </div>
 
-        {/* Lobby History — one row per table */}
-        {lobbyHistories.length > 0 && (
-          <div className={cn('rounded-sm p-3 space-y-1 bg-neutral-900')}>
-            {lobbyHistories.map(({ tableId, numbers }) => (
-              <div key={tableId} className='flex items-center gap-3'>
-                <span className='text-xs uppercase text-neutral-200 min-w-48 shrink-0 truncate' title={tableId}>
-                  {
-                    tmap[
-                      `${tableId
-                        .replace(/0+$/, '')
-                        .replace(/^[A-Z][a-z]+/, '')
-                        .toLowerCase()}` as keyof typeof tmap
-                    ]
-                  }
-                </span>
-                <div className='flex gap-0.5 bg-white/40 p-0.5 rounded-xs'>
-                  {numbers.slice(0, 10).map((n, i) => (
-                    <LobbyNumber key={i} number={n} />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
         {/* Recent Numbers Strip */}
         <div className='grid grid-cols-10 gap-1'>
           <VPctBar
@@ -248,7 +223,30 @@ export const Analytics: FC<AnalyticsProps> = ({ results, lobbyHistories = [], on
             color='neutral'
           />
         </div>
-
+        {/* Lobby History — one row per table */}
+        {lobbyHistories.length > 0 && (
+          <div className={cn('rounded-sm p-3 space-y-1 bg-neutral-900')}>
+            {lobbyHistories.map(({ tableId, numbers }) => (
+              <div key={tableId} className='flex items-center gap-3'>
+                <span className='text-xs uppercase text-neutral-200 min-w-48 shrink-0 truncate' title={tableId}>
+                  {
+                    tmap[
+                      `${tableId
+                        .replace(/0+$/, '')
+                        .replace(/^[A-Z][a-z]+/, '')
+                        .toLowerCase()}` as keyof typeof tmap
+                    ]
+                  }
+                </span>
+                <div className='flex gap-0.5 bg-white/40 p-0.5 rounded-xs'>
+                  {numbers.slice(0, 10).map((n, i) => (
+                    <LobbyNumber key={i} number={n} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         <div className={cn('rounded-lg px-4 pb-3 bg-neutral-700')}>
           <h2 className='font-okx font-semibold text-white uppercase py-2'>Streets</h2>
           <div className='grid grid-cols-12 gap-1.5'>
@@ -259,7 +257,7 @@ export const Analytics: FC<AnalyticsProps> = ({ results, lobbyHistories = [], on
                   <div className='relative z-10 h-20 font-medium text-neutral-300 text-sm text-center'>
                     <div className='absolute z-0 bottom-0 rounded-full left-0 w-7 h-18'>
                       <div
-                        className='absolute bottom-0 w-7 bg-linear-to-t from-emerald-400/50 via-emerald-400/40 to-emerald-30 rounded-full transition-all duration-500'
+                        className='absolute bottom-0 w-7 bg-linear-to-t from-emerald-400/50 via-emerald-400/40 to-emerald-400/40 rounded-full transition-all duration-500 z-8'
                         style={{ height: `${Math.min(street.pct * 3 * 2, 100)}%` }}
                       />
                     </div>
@@ -296,7 +294,7 @@ export const Analytics: FC<AnalyticsProps> = ({ results, lobbyHistories = [], on
           {winningNumbers.length > 0 && (
             <div className='mt-4 flex items-center justify-between gap-3 border-t border-white/8 pt-3 text-xs text-neutral-400'>
               <span className='font-okx'>{winningNumbers.length} tracked spins</span>
-              <span className='font-okx'>Latest result: {winningNumbers[0]}</span>
+              <span className='font-okx'>Latest result: {latestNumber}</span>
             </div>
           )}
         </div>

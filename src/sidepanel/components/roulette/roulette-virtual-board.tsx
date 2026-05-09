@@ -121,18 +121,22 @@ export function RouletteVirtualBoard({
     }
   }, [selectedChip, betMultiplier])
 
-  // Accumulate placed numbers across rounds — chips persist on the Evolution table,
-  // so the full set of numbers physically on the table at step N is the union of
-  // all per-round placements up to and including that step.
-  const cumulativePlacedLog = useMemo(() => {
+  // Accumulate placed numbers across rounds and align them to consumed spins.
+  // Chips persist on the Evolution table, so when a new result arrives before a
+  // fresh placement snapshot is logged for that step, the step should still see
+  // the last known cumulative table state.
+  const cumulativePlacedSnapshots = useMemo(() => {
     const result: number[][] = []
     const accumulated = new Set<number>()
     for (const nums of placedLog) {
       nums.forEach((n) => accumulated.add(n))
       result.push([...accumulated])
     }
+    while (result.length < trackedWinningNumbers.length) {
+      result.push([...accumulated])
+    }
     return result
-  }, [placedLog])
+  }, [placedLog, trackedWinningNumbers.length])
 
   const simulation = useMemo(
     () =>
@@ -142,13 +146,13 @@ export function RouletteVirtualBoard({
         allowOverlaps,
         spreadSelectionMode,
         scatter,
-        placedNumbersPerStep: cumulativePlacedLog
+        placedNumbersPerStep: cumulativePlacedSnapshots
       }),
     [
       allowOverlaps,
       baseUnit,
       hotNumbers,
-      cumulativePlacedLog,
+      cumulativePlacedSnapshots,
       scatter,
       spreadSelectionMode,
       startingQuadrant,
@@ -240,7 +244,7 @@ export function RouletteVirtualBoard({
 
     for (const step of newSteps) {
       const stepIdx = step.spinIndex - 1
-      const placedForStep = cumulativePlacedLog[stepIdx]
+      const placedForStep = cumulativePlacedSnapshots[stepIdx]
       const isWin = step.hitType !== 'miss' && !!placedForStep?.includes(step.landedNumber)
 
       if (!isWin) {
@@ -266,7 +270,7 @@ export function RouletteVirtualBoard({
       setLastWinProfit(latestProfit)
       setWinVerb(pickVerb())
     }
-  }, [simulation.steps, cumulativePlacedLog])
+  }, [simulation.steps, cumulativePlacedSnapshots])
 
   // Auto-disarm on win, max-loss, or zero without a hedge (rounds 1–3)
   useEffect(() => {
@@ -475,7 +479,7 @@ export function RouletteVirtualBoard({
         fmtAmt={fmtAmt}
         winVerb={winVerb}
         lastWinProfit={lastWinProfit}
-        signalFound={false}
+        signalFound={signalFound}
         isTracking={isTracking}
         auto={auto}
         toggleAuto={toggleAuto}
@@ -531,6 +535,7 @@ export function RouletteVirtualBoard({
               onBetMultiply={onBetMultiply}
               betMultiplier={betMultiplier}
               tableState={evolutionTableState}
+              isTracking={isTracking}
             />
           </div>
 
@@ -553,21 +558,22 @@ export function RouletteVirtualBoard({
                     if (displayNums.length === 0) return null
                     const step = simulation.steps[idx]
                     const isWin =
-                      step != null && step.hitType !== 'miss' && cumulativePlacedLog[idx]?.includes(step.landedNumber)
+                      step != null &&
+                      step.hitType !== 'miss' &&
+                      cumulativePlacedSnapshots[idx]?.includes(step.landedNumber)
                     return (
                       <Fragment key={idx}>
-                        {idx > 0 && <span className='shrink-0 text-slate-400 text-[0.55rem] font-thin'>│</span>}
+                        {idx > 0 && <span className='shrink-0 text-slate-300 text-[0.55rem] font-thin'>│</span>}
                         {displayNums.map((n) => (
                           <span
                             key={`${idx}-${n}`}
                             className={cn(
-                              'shrink-0 tabular-nums text-[0.69rem] leading-none rounded-xs flex items-center justify-center w-5 h-4 font-okx font-semibold',
+                              'shrink-0 tabular-nums text-sm leading-none rounded-xs flex items-center justify-center w-5 h-4 font-okx font-semibold text-neutral-950',
                               roundBgs[idx],
-                              winningNumbers.slice().reverse()[0] === n && isWin
-                                ? 'bg-neutral-900 font-bold text-emerald-500 text-lg -tracking-widest px-0.5'
-                                : n === 0
-                                  ? 'bg-emerald-950/60 border-emerald-700/40 text-emerald-300'
-                                  : 'text-neutral-950'
+                              {
+                                'bg-emerald-950/60 border-emerald-700/40 text-emerald-300': n === 0,
+                                'bg-neutral-900 font-bold text-emerald-500 text-lg -tracking-widest px-0.5': isWin
+                              }
                             )}>
                             {n}
                           </span>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { SAMPLE_SPIN_TAPE } from '../../../lib/roulette'
+import { getNewRecentSpinCount, SAMPLE_SPIN_TAPE } from '../../../lib/roulette'
 import type { PanelStatus } from '../../../types'
 import type { RouletteStoredData, TableState } from '../../../types/roulette'
 import { Analytics } from './roulette-analytics'
@@ -14,6 +14,7 @@ interface RouletteWorkspaceProps {
   evolutionBettingOpen: boolean
   evolutionRecentNumbers: number[]
   evolutionTableState: TableState | null
+  evolutionTableName: string | null
   evolutionLobbyHistories: { tableId: string; numbers: number[] }[]
   onReset: () => void
 }
@@ -26,44 +27,45 @@ export function RouletteWorkspace({
   evolutionBettingOpen,
   evolutionRecentNumbers,
   evolutionTableState,
+  evolutionTableName,
   evolutionLobbyHistories,
   onReset
 }: RouletteWorkspaceProps) {
   // ── Live winning-numbers sequence ─────────────────────────────────────────
-  // evolutionRecentNumbers is newest-first (DOM-scraped, always fresh).
-  // We build a growing oldest-first sequence by detecting new spins as the
-  // head of evolutionRecentNumbers changes. This is more reliable than waiting
+  // evolutionRecentNumbers is newest-first (DOM-scraped or selected from active-table lobby history).
+  // We build a growing oldest-first sequence by detecting the overlap between
+  // successive recent-number snapshots, including repeated head values. This is
+  // more reliable than waiting
   // for websocket-captured stored results, which can fail when Evolution runs
   // in a cross-origin iframe.
   const prevRecentRef = useRef<number[]>([])
+  const prevTableNameRef = useRef<string | null>(null)
   const [liveWinningNumbers, setLiveWinningNumbers] = useState<number[]>([])
 
   useEffect(() => {
     const prev = prevRecentRef.current
     const curr = evolutionRecentNumbers
-    prevRecentRef.current = curr
+    const tableChanged = evolutionTableName !== null && evolutionTableName !== prevTableNameRef.current
 
     if (curr.length === 0) return
+    prevRecentRef.current = curr
+    prevTableNameRef.current = evolutionTableName
 
-    if (prev.length === 0) {
+    if (prev.length === 0 || tableChanged) {
       // First non-empty update — seed with reversed recent (oldest-first)
       setLiveWinningNumbers([...curr].reverse())
       return
     }
 
-    if (curr[0] === prev[0]) return // No new spin
+    const newCount = getNewRecentSpinCount(prev, curr)
+    if (newCount === 0) return // No new spin
 
-    // Detect how many new numbers appeared at the front (usually 1)
-    const prevHeadIdx = curr.indexOf(prev[0])
-    const newCount = prevHeadIdx >= 0 ? prevHeadIdx : 1
+    // Detect how many new numbers appeared at the front, including repeats.
     const newSpins = curr.slice(0, newCount).reverse() // oldest-first
     setLiveWinningNumbers((w) => [...w, ...newSpins])
-  }, [evolutionRecentNumbers])
+  }, [evolutionRecentNumbers, evolutionTableName])
 
-  const storedNumbers = useMemo(
-    () => stats.results.map((r) => r.winningNumber),
-    [stats.results]
-  )
+  const storedNumbers = useMemo(() => stats.results.map((r) => r.winningNumber), [stats.results])
 
   // liveWinningNumbers is preferred; fall back to stored when live is empty
   const winningNumbers = liveWinningNumbers.length > 0 ? liveWinningNumbers : storedNumbers
@@ -74,7 +76,8 @@ export function RouletteWorkspace({
     const seed = [...evolutionRecentNumbers].reverse()
     setLiveWinningNumbers(seed)
     prevRecentRef.current = evolutionRecentNumbers
-  }, [onReset, evolutionRecentNumbers])
+    prevTableNameRef.current = evolutionTableName
+  }, [onReset, evolutionRecentNumbers, evolutionTableName])
 
   const recentSpins = stats.results.slice(-10).reverse()
   const previewSpins =
@@ -83,12 +86,18 @@ export function RouletteWorkspace({
       : recentSpins.length > 0
         ? recentSpins.map((result) => result.winningNumber)
         : SAMPLE_SPIN_TAPE
+  const hasRealPreviewSpins = evolutionRecentNumbers.length > 0 || recentSpins.length > 0
 
   const latestSpin = recentSpins[0] ?? null
 
   return (
     <div className='space-y-0 pb-6 bg-[#1F2020]'>
-      <RouletteHeader stats={stats} latestSpin={latestSpin} previewSpins={previewSpins} />
+      <RouletteHeader
+        winningNumbers={winningNumbers}
+        hasRealSpins={hasRealPreviewSpins}
+        latestSpin={latestSpin}
+        previewSpins={previewSpins}
+      />
       <RouletteVirtualBoard
         status={status}
         winningNumbers={winningNumbers}
@@ -97,7 +106,7 @@ export function RouletteWorkspace({
         evolutionBettingOpen={evolutionBettingOpen}
         evolutionTableState={evolutionTableState}
       />
-      <Analytics lobbyHistories={evolutionLobbyHistories} onReset={handleReset} results={stats.results} />
+      <Analytics lobbyHistories={evolutionLobbyHistories} onReset={handleReset} winningNumbers={winningNumbers} />
     </div>
   )
 }

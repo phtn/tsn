@@ -47,6 +47,7 @@ let tennisSyncTimer: number | null = null
 let lastTennisSignature = ''
 let lastChipSignature = ''
 let lastRecentNumbersSignature = ''
+let lastTableNameSignature = ''
 
 const script = document.createElement('script')
 script.src = chrome.runtime.getURL('dist/injected.js')
@@ -275,7 +276,10 @@ function isBet88Base(value: unknown): value is Bet88<unknown> {
     (typeof value.win === 'boolean' || typeof value.win === 'number') &&
     (typeof value.active === 'boolean' || typeof value.active === 'number') &&
     (value.multiplier === null || value.multiplier === undefined || typeof value.multiplier === 'number') &&
-    (value.winAmount === null || value.winAmount === undefined || typeof value.winAmount === 'string' || typeof value.winAmount === 'number')
+    (value.winAmount === null ||
+      value.winAmount === undefined ||
+      typeof value.winAmount === 'string' ||
+      typeof value.winAmount === 'number')
   )
 }
 
@@ -817,10 +821,7 @@ function parseBet88Result(payload: InterceptedNetworkPayload): GameResult | null
   const requestBody = isRecord(payload.requestBody) ? payload.requestBody : null
   const payout = toNumber(providerData.winAmount)
   const amount = toNumber(requestBody?.amount)
-  const profit =
-    payout !== undefined && amount !== undefined
-      ? payout - amount
-      : toNumber(providerData.profit)
+  const profit = payout !== undefined && amount !== undefined ? payout - amount : toNumber(providerData.profit)
   const win = typeof providerData.win === 'boolean' ? providerData.win : providerData.win !== 0
   const result = resolveFinancialOutcome({
     amount,
@@ -1372,9 +1373,7 @@ function reportCoordsToBackground(requestId: string, x: number, y: number, selec
   // sendMessage in that state throws "Extension context invalidated" and the
   // background never receives coords, so all trusted clicks time out.
   if (!chrome.runtime?.id) {
-    console.warn(
-      '[watchful-wind] Extension context invalidated — reload the page to restore click automation.'
-    )
+    console.warn('[watchful-wind] Extension context invalidated — reload the page to restore click automation.')
     return
   }
   try {
@@ -1396,10 +1395,7 @@ function sendCoordsUp(requestId: string, x: number, y: number, selector: string)
     reportCoordsToBackground(requestId, x, y, selector)
     return
   }
-  window.parent.postMessage(
-    { type: 'EVO_TRANSLATE_COORDS', requestId, selector, local: { x, y } },
-    '*'
-  )
+  window.parent.postMessage({ type: 'EVO_TRANSLATE_COORDS', requestId, selector, local: { x, y } }, '*')
 }
 
 function findIframeForSource(source: MessageEventSource | null): HTMLIFrameElement | null {
@@ -1474,7 +1470,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       '[data-role="chip"][aria-selected="true"]',
       '[data-role="chip"][data-active="true"]',
       '[data-role="chip"][data-selected="true"]',
-      '[data-role="chip"][data-current="true"]',
+      '[data-role="chip"][data-current="true"]'
     ]
     let value: number | null = null
     for (const sel of ACTIVE_CHIP_SELECTORS) {
@@ -1617,6 +1613,18 @@ function syncRecentNumbers(): void {
   chrome.storage.local.set({ evolutionRecentNumbers: numbers })
 }
 
+function scrapeEvolutionTableName(): string | null {
+  const tableName = deepQuery(document, '[data-role="table-name"]')?.textContent?.trim()
+  return tableName && tableName.length > 0 ? tableName : null
+}
+
+function syncEvolutionTableName(): void {
+  const tableName = scrapeEvolutionTableName()
+  if (!tableName || tableName === lastTableNameSignature) return
+  lastTableNameSignature = tableName
+  chrome.storage.local.set({ evolutionTableName: tableName })
+}
+
 function initEvolutionChipCapture(): void {
   const root = document.documentElement
   if (!root) {
@@ -1629,6 +1637,7 @@ function initEvolutionChipCapture(): void {
     syncRebetVisible()
     syncBettingOpen()
     syncRecentNumbers()
+    syncEvolutionTableName()
   })
 
   observer.observe(root, {
@@ -1638,16 +1647,22 @@ function initEvolutionChipCapture(): void {
     attributeFilter: ['style', 'class', 'disabled', 'hidden']
   })
 
-  window.addEventListener('load', () => {
-    syncEvolutionChips()
-    syncRebetVisible()
-    syncBettingOpen()
-    syncRecentNumbers()
-  }, { once: true })
+  window.addEventListener(
+    'load',
+    () => {
+      syncEvolutionChips()
+      syncRebetVisible()
+      syncBettingOpen()
+      syncRecentNumbers()
+      syncEvolutionTableName()
+    },
+    { once: true }
+  )
   syncEvolutionChips()
   syncRebetVisible()
   syncBettingOpen()
   syncRecentNumbers()
+  syncEvolutionTableName()
 }
 
 initEvolutionChipCapture()

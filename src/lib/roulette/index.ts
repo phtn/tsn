@@ -67,3 +67,4 @@ export const SECTOR_PRESETS = [
 export const SAMPLE_SPIN_TAPE = [32, 15, 19, 4, 21, 2, 25, 17, 34, 6] as const
 
 export * from './kims-algo'
+export * from './recent-numbers'

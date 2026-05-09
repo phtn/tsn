@@ -1,6 +1,12 @@
 import { startTransition, useCallback, useEffect, useMemo, useState } from 'react'
 import { deriveVirtualBankroll } from '../lib/virtual-bankroll'
 import {
+  getEvolutionRecentNumbersForTable,
+  normalizeEvolutionLobbyHistories,
+  normalizeEvolutionRecentNumbers,
+  type EvolutionLobbyHistory
+} from '../lib/roulette/evolution-recent-numbers'
+import {
   EMPTY_STORED_DATA,
   EMPTY_VIRTUAL_BANKROLL,
   normalizeStoredData,
@@ -41,6 +47,10 @@ function getStoredPort(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 3000
 }
 
+function sameNumbers(left: readonly number[], right: readonly number[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
 const App = () => {
   const [stats, setStats] = useState<StoredData>(EMPTY_STORED_DATA)
   const [status, setStatus] = useState<PanelStatus>(INITIAL_STATUS)
@@ -54,10 +64,12 @@ const App = () => {
   const [evolutionBettingOpen, setEvolutionBettingOpen] = useState<boolean>(false)
   const [evolutionRecentNumbers, setEvolutionRecentNumbers] = useState<number[]>([])
   const [evolutionTableState, setEvolutionTableState] = useState<TableState | null>(null)
-  const [evolutionLobbyHistories, setEvolutionLobbyHistories] = useState<{ tableId: string; numbers: number[] }[]>([])
-  const [activeGameClass, setActiveGameClass] = useState<GameClassView>('originals')
+  const [evolutionTableName, setEvolutionTableName] = useState<string | null>(null)
+  const [evolutionLobbyHistories, setEvolutionLobbyHistories] = useState<EvolutionLobbyHistory[]>([])
+  const [activeGameClass, setActiveGameClass] = useState<GameClassView>('roulette')
   const [showSettings, setShowSettings] = useState(false)
   // ─── loaders ──────────────────────────────────────────────────────────────
+  //
 
   const loadStats = () => {
     chrome.storage.local.get(['casinoResults', 'virtualBankroll'], (data) => {
@@ -100,24 +112,20 @@ const App = () => {
         'evolutionBettingOpen',
         'evolutionRecentNumbers',
         'evolutionTableState',
+        'evolutionTableName',
         'evolutionLobbyHistories'
       ],
       (data) => {
         const chips = Array.isArray(data.evolutionChips)
           ? data.evolutionChips.filter((v: unknown) => typeof v === 'number' && v > 0)
           : []
-        const recentNumbers = Array.isArray(data.evolutionRecentNumbers)
-          ? data.evolutionRecentNumbers.filter(
-              (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 36
-            )
-          : []
-        const lobbyHistories = Array.isArray(data.evolutionLobbyHistories)
-          ? (data.evolutionLobbyHistories as unknown[]).filter(
-              (v): v is { tableId: string; numbers: number[] } =>
-                typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>).tableId === 'string' &&
-                Array.isArray((v as Record<string, unknown>).numbers)
-            )
-          : []
+        const recentNumbers = normalizeEvolutionRecentNumbers(data.evolutionRecentNumbers)
+        const lobbyHistories = normalizeEvolutionLobbyHistories(data.evolutionLobbyHistories)
+        const tableName =
+          typeof data.evolutionTableName === 'string' && data.evolutionTableName.trim().length > 0
+            ? data.evolutionTableName.trim()
+            : null
+        const activeTableRecentNumbers = getEvolutionRecentNumbersForTable(recentNumbers, lobbyHistories, tableName)
         startTransition(() => {
           setEvolutionChips((prev) => {
             const next = chips as number[]
@@ -125,8 +133,11 @@ const App = () => {
           })
           setEvolutionRebetVisible(data.evolutionRebetVisible === true)
           setEvolutionBettingOpen(data.evolutionBettingOpen === true)
-          setEvolutionRecentNumbers(recentNumbers as number[])
-          setEvolutionTableState(typeof data.evolutionTableState === 'string' ? data.evolutionTableState as TableState : null)
+          setEvolutionRecentNumbers((prev) => (sameNumbers(prev, activeTableRecentNumbers) ? prev : activeTableRecentNumbers))
+          setEvolutionTableState(
+            typeof data.evolutionTableState === 'string' ? (data.evolutionTableState as TableState) : null
+          )
+          setEvolutionTableName(tableName)
           setEvolutionLobbyHistories(lobbyHistories)
         })
       }
@@ -278,6 +289,7 @@ const App = () => {
         changes.evolutionBettingOpen ||
         changes.evolutionRecentNumbers ||
         changes.evolutionTableState ||
+        changes.evolutionTableName ||
         changes.evolutionLobbyHistories
       ) {
         loadEvolutionChips()
@@ -427,6 +439,7 @@ const App = () => {
             evolutionBettingOpen={evolutionBettingOpen}
             evolutionRecentNumbers={evolutionRecentNumbers}
             evolutionTableState={evolutionTableState}
+            evolutionTableName={evolutionTableName}
             evolutionLobbyHistories={evolutionLobbyHistories}
             onReset={clearRouletteResults}
           />

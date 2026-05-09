@@ -1,11 +1,12 @@
 import { getNumberTone } from '../../../lib/roulette/utils'
 import { cn } from '../../../lib/utils'
-import { RouletteSpinResult, RouletteStoredData } from '../../../types/roulette'
+import { RouletteSpinResult } from '../../../types/roulette'
 
 interface RouletteHeaderProps {
-  stats: RouletteStoredData
+  hasRealSpins: boolean
   latestSpin: RouletteSpinResult | null
   previewSpins: number[] | readonly number[]
+  winningNumbers: number[]
 }
 
 function getProviderLabel(spin: RouletteSpinResult | null): string {
@@ -22,9 +23,11 @@ function getTableName(spin: RouletteSpinResult | null): string {
   return 'Speed Roulette'
 }
 
-export const RouletteHeader = ({ stats, latestSpin, previewSpins }: RouletteHeaderProps) => {
+export const RouletteHeader = ({ hasRealSpins, latestSpin, previewSpins, winningNumbers }: RouletteHeaderProps) => {
   const providerLabel = getProviderLabel(latestSpin)
   const tableName = getTableName(latestSpin)
+  const latestPreviewSpin = previewSpins[0]
+  const hasPreviewSpin = hasRealSpins && typeof latestPreviewSpin === 'number'
 
   return (
     <section className='relative overflow-hidden rounded-xs border-t border-white/12 bg-[#1F2020] p-5 text-white'>
@@ -43,10 +46,10 @@ export const RouletteHeader = ({ stats, latestSpin, previewSpins }: RouletteHead
           </div>
           <div
             className={cn(
-              `flex items-center justify-center rounded-full border border-emerald-300/25 bg-emerald-300/10 h-12 w-auto aspect-square uppercase text-emerald-100 ${getNumberTone(latestSpin?.winningNumber)} border-3! border-white/15 shadow-inner`
+              `flex items-center justify-center rounded-full border border-emerald-300/25 bg-emerald-300/10 h-12 w-auto aspect-square uppercase text-emerald-100 ${getNumberTone(hasPreviewSpin ? latestPreviewSpin : undefined)} border-3! border-white/15 shadow-inner`
             )}>
-            <span className={cn('font-medium text-xs text-center', { 'text-xl font-bold': stats.totalSpins > 0 })}>
-              {stats.totalSpins > 0 ? previewSpins[0] : 'Awaiting Spins'}
+            <span className={cn('font-medium text-xs text-center', { 'text-xl font-bold': hasPreviewSpin })}>
+              {latestSpin?.winningNumber ?? 'Awaiting Spins'}
             </span>
           </div>
         </div>

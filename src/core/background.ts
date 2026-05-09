@@ -1,5 +1,7 @@
 import { getSupportedSite } from './siteConfig'
 
+const SIDE_PANEL_PATH = 'sidepanel.html'
+
 // ──────────────────────────────────────────────────────────────────────────
 // CDP-based trusted click (bypasses isTrusted checks in Evolution's framework)
 // ──────────────────────────────────────────────────────────────────────────
@@ -159,14 +161,28 @@ async function getTabWithUrl(tabId: number, fallback?: chrome.tabs.Tab): Promise
   }
 }
 
+async function closeSidePanelForTab(tabId: number): Promise<void> {
+  if (typeof chrome.sidePanel.close !== 'function') {
+    return
+  }
+
+  try {
+    await chrome.sidePanel.close({ tabId })
+  } catch (error) {
+    console.debug('Failed to close side panel:', error)
+  }
+}
+
 async function updateSidePanel(tabId: number, url?: string | null): Promise<void> {
   const site = getSupportedSite(url)
 
-  await chrome.sidePanel.setOptions({
-    tabId,
-    path: 'sidepanel.html',
-    enabled: Boolean(site)
-  })
+  if (!site) {
+    await chrome.sidePanel.setOptions({ tabId, enabled: false })
+    await closeSidePanelForTab(tabId)
+    return
+  }
+
+  await chrome.sidePanel.setOptions({ tabId, path: SIDE_PANEL_PATH, enabled: true })
 }
 
 function broadcastUrlStatus(tab?: chrome.tabs.Tab): void {
@@ -215,36 +231,34 @@ async function syncActiveTabStatus(): Promise<void> {
   await syncTabStatus(activeTab.id, activeTab)
 }
 
-chrome.action.onClicked.addListener(async (clickedTab) => {
+async function configureSidePanelDefaults(): Promise<void> {
+  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+  await chrome.sidePanel.setOptions({ path: SIDE_PANEL_PATH, enabled: false })
+}
+
+async function initializeSidePanel(): Promise<void> {
+  try {
+    await configureSidePanelDefaults()
+    await syncActiveTabStatus()
+  } catch (error) {
+    console.error('Failed to initialize side panel:', error)
+  }
+}
+
+chrome.action.onClicked.addListener((clickedTab) => {
   if (!clickedTab.id) {
     return
   }
 
-  const tab = await getTabWithUrl(clickedTab.id, clickedTab)
-  if (!tab) {
-    return
-  }
-
-  try {
-    await updateSidePanel(tab.id!, tab.url)
-    broadcastUrlStatus(tab)
-
-    if (!getSupportedSite(tab.url)) {
-      return
-    }
-
-    await chrome.sidePanel.open({ tabId: tab.id! })
-  } catch (error) {
-    console.error('Failed to open side panel:', error)
-  }
+  void syncTabStatus(clickedTab.id, clickedTab)
 })
 
 chrome.runtime.onInstalled.addListener(() => {
-  void syncActiveTabStatus()
+  void initializeSidePanel()
 })
 
 chrome.runtime.onStartup.addListener(() => {
-  void syncActiveTabStatus()
+  void initializeSidePanel()
 })
 
 chrome.tabs.onUpdated.addListener(async (tabId: number, info: chrome.tabs.OnUpdatedInfo, tab: chrome.tabs.Tab) => {
