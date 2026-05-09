@@ -576,18 +576,13 @@ export function simulateKimsAlgo(spins: readonly number[], options: Partial<KimA
       scatter: resolvedOptions.scatter,
       scatterSeed: index
     })
-    // A win requires the ball to land on a number that was physically placed AND belongs
-    // to an active quadrant definition. Spread replacements are not in quadrantNumbers so
-    // they cannot trigger a session reset, and quadrant numbers displaced by spread fills
-    // (never actually placed) are also excluded.
     // Use actually-placed numbers from Evolution when available; fall back to the
-    // computed quadrantNumbers so the simulator still works without live data.
+    // computed quadrant numbers so the standalone simulator keeps its theoretical behavior.
     const actualPlaced = resolvedOptions.placedNumbersPerStep?.[index]
-    // A win requires landing on a quadrant number (never a spread fill).
-    // In live mode also require the number was physically placed (guards missed spots).
-    const hitQuadrant = actualPlaced
-      ? bet.quadrantNumbers.includes(landedNumber) && actualPlaced.includes(landedNumber)
+    const landedOnPlacedNumber = actualPlaced
+      ? actualPlaced.includes(landedNumber)
       : bet.quadrantNumbers.includes(landedNumber)
+    const hitQuadrant = landedNumber !== 0 && landedOnPlacedNumber
 
     console.log(
       `[kim] spin ${index + 1} | R${activeRound} | quadrants: [${activeQuadrants.join(', ')}]` +
@@ -596,7 +591,7 @@ export function simulateKimsAlgo(spins: readonly number[], options: Partial<KimA
         (actualPlaced ? ' (live)' : ' (sim)')
     )
 
-    const hitZero = bet.zeroStake > 0 && landedNumber === 0
+    const hitZero = landedNumber === 0 && (actualPlaced ? actualPlaced.includes(0) : bet.zeroStake > 0)
     const hit = hitQuadrant || hitZero
     // Zero on rounds 1–3 (no zero hedge) is an immediate loss — don't escalate
     const zeroOnUnhedgedRound = landedNumber === 0 && bet.zeroStake === 0

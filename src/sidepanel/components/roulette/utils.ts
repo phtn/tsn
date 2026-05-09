@@ -35,18 +35,7 @@ export function getHotNumbers(values: readonly number[], limit: number = 6): num
     .map(([number]) => number)
 }
 
-const WIN_VERBS = [
-  'snatched',
-  'bagged',
-  'took',
-  'grabbed',
-  'swiped',
-  'cashed',
-  'scooped',
-  'catched',
-  'stashed',
-  'locked'
-]
+const WIN_VERBS = ['snatched', 'bagged', 'grabbed', 'swiped', 'cashed', 'scooped', 'stashed', 'locked', 'mugged']
 
 export function pickVerb(): string {
   return WIN_VERBS[Math.floor(Math.random() * WIN_VERBS.length)]

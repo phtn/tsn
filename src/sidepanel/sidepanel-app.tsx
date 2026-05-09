@@ -25,6 +25,10 @@ import { GameClassSwitcher, type GameClassView } from './components/shared/game-
 import { MainHeader } from './components/shared/header'
 import { TennisWorkspace } from './components/tennis/tennis-workspace'
 import { getNetTone } from './lib/formatters'
+import {
+  resolveRouletteResultEndpointUrl,
+  type RouletteResultEndpointConfig
+} from './lib/rouletteSpinResults'
 
 const INITIAL_STATUS: PanelStatus = { connected: false, message: 'Checking the active tab...', site: null }
 
@@ -41,11 +45,35 @@ function getStoredPort(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 3000
 }
 
+function getDefaultRouletteResultEndpointConfig(devServerPort: number): RouletteResultEndpointConfig {
+  return {
+    baseUrl: `http://localhost:${devServerPort}`,
+    endpoint: '/api/roulette-results'
+  }
+}
+
+function normalizeRouletteResultEndpointConfig(value: unknown, devServerPort: number): RouletteResultEndpointConfig {
+  const fallback = getDefaultRouletteResultEndpointConfig(devServerPort)
+
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return fallback
+  }
+
+  const record = value as Record<string, unknown>
+  return {
+    baseUrl: typeof record.baseUrl === 'string' && record.baseUrl.trim() ? record.baseUrl : fallback.baseUrl,
+    endpoint: typeof record.endpoint === 'string' && record.endpoint.trim() ? record.endpoint : fallback.endpoint
+  }
+}
+
 const App = () => {
   const [stats, setStats] = useState<StoredData>(EMPTY_STORED_DATA)
   const [status, setStatus] = useState<PanelStatus>(INITIAL_STATUS)
   const [simulated, setSimulated] = useState<boolean>(false)
   const [devServerPort, setDevServerPort] = useState<number>(3000)
+  const [rouletteResultEndpointConfig, setRouletteResultEndpointConfig] = useState<RouletteResultEndpointConfig>(
+    getDefaultRouletteResultEndpointConfig(3000)
+  )
   const [virtualBankroll, setVirtualBankroll] = useState<VirtualBankrollState>(EMPTY_VIRTUAL_BANKROLL)
   const [rouletteStats, setRouletteStats] = useState<RouletteStoredData>(EMPTY_ROULETTE_STORED_DATA)
   const [tennisStats, setTennisStats] = useState<TennisStoredData>(EMPTY_TENNIS_STORED_DATA)
@@ -70,6 +98,18 @@ const App = () => {
       startTransition(() => {
         const nextPort = getStoredPort(data.devServerPort)
         setDevServerPort((cur) => (cur === nextPort ? cur : nextPort))
+      })
+    })
+  }
+
+  const loadRouletteResultEndpointConfig = () => {
+    chrome.storage.local.get(['devServerPort', 'rouletteResultEndpointConfig'], (data) => {
+      startTransition(() => {
+        const nextPort = getStoredPort(data.devServerPort)
+        const nextConfig = normalizeRouletteResultEndpointConfig(data.rouletteResultEndpointConfig, nextPort)
+        setRouletteResultEndpointConfig((current) =>
+          current.baseUrl === nextConfig.baseUrl && current.endpoint === nextConfig.endpoint ? current : nextConfig
+        )
       })
     })
   }
@@ -207,6 +247,18 @@ const App = () => {
     })
   }, [])
 
+  const saveRouletteResultEndpointConfig = useCallback((config: RouletteResultEndpointConfig) => {
+    const fallback = getDefaultRouletteResultEndpointConfig(devServerPort)
+    const nextConfig: RouletteResultEndpointConfig = {
+      baseUrl: config.baseUrl.trim() || fallback.baseUrl,
+      endpoint: config.endpoint.trim() || fallback.endpoint
+    }
+
+    chrome.storage.local.set({ rouletteResultEndpointConfig: nextConfig }, () => {
+      startTransition(() => setRouletteResultEndpointConfig(nextConfig))
+    })
+  }, [devServerPort])
+
   const enableVirtualBankroll = useCallback(
     (seedBalance: number, baseBetAmount: number) => {
       persistVirtualBankroll({
@@ -264,6 +316,7 @@ const App = () => {
   useEffect(() => {
     loadStats()
     loadDevServerPort()
+    loadRouletteResultEndpointConfig()
     loadVirtualBankroll()
     loadRouletteResults()
     loadTennisResults()
@@ -273,6 +326,7 @@ const App = () => {
       if (namespace !== 'local') return
       if (changes.casinoResults) loadStats()
       if (changes.devServerPort) loadDevServerPort()
+      if (changes.devServerPort || changes.rouletteResultEndpointConfig) loadRouletteResultEndpointConfig()
       if (changes.virtualBankroll) loadVirtualBankroll()
       if (changes.rouletteResults) loadRouletteResults()
       if (changes.tennisResults) loadTennisResults()
@@ -393,6 +447,11 @@ const App = () => {
     ]
   )
 
+  const rouletteResultEndpointUrl = useMemo(
+    () => resolveRouletteResultEndpointUrl(rouletteResultEndpointConfig),
+    [rouletteResultEndpointConfig]
+  )
+
   // ─── render ────────────────────────────────────────────────────────────────
 
   return (
@@ -432,6 +491,9 @@ const App = () => {
             evolutionRecentNumbers={evolutionRecentNumbers}
             evolutionTableState={evolutionTableState}
             evolutionLobbyHistories={evolutionLobbyHistories}
+            rouletteResultEndpointConfig={rouletteResultEndpointConfig}
+            rouletteResultEndpointUrl={rouletteResultEndpointUrl}
+            saveRouletteResultEndpointConfig={saveRouletteResultEndpointConfig}
             onReset={clearRouletteResults}
           />
         ) : (

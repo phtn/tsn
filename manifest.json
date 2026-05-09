@@ -5,6 +5,7 @@
   "description": "Watch game results and calculate averages",
 
   "permissions": ["storage", "activeTab", "sidePanel", "tabs", "webNavigation", "debugger"],
+  "host_permissions": ["http://*/*", "https://*/*"],
 
   "content_scripts": [
     {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SAMPLE_SPIN_TAPE } from '../../../lib/roulette'
 import type { PanelStatus } from '../../../types'
 import type { RouletteStoredData, TableState } from '../../../types/roulette'
+import type { RouletteResultEndpointConfig } from '../../lib/rouletteSpinResults'
 import { Analytics } from './roulette-analytics'
 import { RouletteHeader } from './roulette-header'
 import { RouletteVirtualBoard } from './roulette-virtual-board'
@@ -15,6 +16,9 @@ interface RouletteWorkspaceProps {
   evolutionRecentNumbers: number[]
   evolutionTableState: TableState | null
   evolutionLobbyHistories: { tableId: string; numbers: number[] }[]
+  rouletteResultEndpointConfig: RouletteResultEndpointConfig
+  rouletteResultEndpointUrl: string
+  saveRouletteResultEndpointConfig: (config: RouletteResultEndpointConfig) => void
   onReset: () => void
 }
 
@@ -27,6 +31,9 @@ export function RouletteWorkspace({
   evolutionRecentNumbers,
   evolutionTableState,
   evolutionLobbyHistories,
+  rouletteResultEndpointConfig,
+  rouletteResultEndpointUrl,
+  saveRouletteResultEndpointConfig,
   onReset
 }: RouletteWorkspaceProps) {
   // ── Live winning-numbers sequence ─────────────────────────────────────────
@@ -37,6 +44,12 @@ export function RouletteWorkspace({
   // in a cross-origin iframe.
   const prevRecentRef = useRef<number[]>([])
   const [liveWinningNumbers, setLiveWinningNumbers] = useState<number[]>([])
+  const [relaySettingsVisible, setRelaySettingsVisible] = useState(false)
+  const [endpointDraft, setEndpointDraft] = useState<RouletteResultEndpointConfig>(rouletteResultEndpointConfig)
+
+  useEffect(() => {
+    setEndpointDraft(rouletteResultEndpointConfig)
+  }, [rouletteResultEndpointConfig])
 
   useEffect(() => {
     const prev = prevRecentRef.current
@@ -60,10 +73,7 @@ export function RouletteWorkspace({
     setLiveWinningNumbers((w) => [...w, ...newSpins])
   }, [evolutionRecentNumbers])
 
-  const storedNumbers = useMemo(
-    () => stats.results.map((r) => r.winningNumber),
-    [stats.results]
-  )
+  const storedNumbers = useMemo(() => stats.results.map((r) => r.winningNumber), [stats.results])
 
   // liveWinningNumbers is preferred; fall back to stored when live is empty
   const winningNumbers = liveWinningNumbers.length > 0 ? liveWinningNumbers : storedNumbers
@@ -96,8 +106,52 @@ export function RouletteWorkspace({
         evolutionRebetVisible={evolutionRebetVisible}
         evolutionBettingOpen={evolutionBettingOpen}
         evolutionTableState={evolutionTableState}
+        rouletteResultEndpointUrl={rouletteResultEndpointUrl}
       />
       <Analytics lobbyHistories={evolutionLobbyHistories} onReset={handleReset} results={stats.results} />
+      <div className='flex items-center space-x-4'>
+        {relaySettingsVisible ? (
+          <div className='mt-4 flex gap-2'>
+            <input
+              type='url'
+              value={endpointDraft.baseUrl}
+              onChange={(event) =>
+                setEndpointDraft({
+                  ...endpointDraft,
+                  baseUrl: event.target.value
+                })
+              }
+              className='flex-1 rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-[#c208fc] outline-none transition focus:border-slate-900'
+              placeholder='http://localhost:3000'
+            />
+            <input
+              type='text'
+              value={endpointDraft.endpoint}
+              onChange={(event) =>
+                setEndpointDraft({
+                  ...endpointDraft,
+                  endpoint: event.target.value
+                })
+              }
+              className='flex-1 rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-[#c208fc] outline-none transition focus:border-slate-900'
+              placeholder='/api/roulette-results'
+            />
+            <button
+              onClick={() => saveRouletteResultEndpointConfig(endpointDraft)}
+              className='rounded-[18px] bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800'>
+              Save
+            </button>
+          </div>
+        ) : (
+          <p className='mt-4 text-sm font-semibold text-[#46D266]'>{rouletteResultEndpointUrl}</p>
+        )}
+
+        <button
+          className='h-7 px-1.5 rounded-md text-gray-100'
+          onClick={() => setRelaySettingsVisible(!relaySettingsVisible)}>
+          Configure
+        </button>
+      </div>
     </div>
   )
 }
