@@ -1,4 +1,5 @@
 import { applyPaperBankrollToRound } from '../lib/paper-bankroll'
+import type { RouletteLobbyHistoriesCapture } from '../lib/rouletteLobbyHistories'
 import { resolveFinancialOutcome } from '../lib/result-outcome'
 import { extractTennisEvents, hasTennisSurface } from '../lib/tennis/scrape'
 import {
@@ -10,6 +11,7 @@ import {
 } from '../types'
 import type { Bet88, Bet88Dice, Bet88Keno, Bet88Limbo, Bet88Mines } from '../types/bet88'
 import {
+  type LobbyTableHistory,
   normalizeRouletteStoredData,
   summarizeRouletteResults,
   type EvoMessage,
@@ -47,6 +49,7 @@ let tennisSyncTimer: number | null = null
 let lastTennisSignature = ''
 let lastChipSignature = ''
 let lastRecentNumbersSignature = ''
+let lastLobbyHistoriesSignature = ''
 
 const script = document.createElement('script')
 script.src = chrome.runtime.getURL('dist/injected.js')
@@ -72,13 +75,13 @@ function extractEvoTableState(payload: InterceptedNetworkPayload): string | null
   return state.toUpperCase()
 }
 
-function extractLobbyHistories(payload: InterceptedNetworkPayload): { tableId: string; numbers: number[] }[] | null {
+function extractLobbyHistories(payload: InterceptedNetworkPayload): LobbyTableHistory[] | null {
   const data = payload.data
   if (!isRecord(data) || data.type !== 'lobby.histories' || !isRecord(data.args)) return null
   const raw = data.args.histories
   if (!isRecord(raw)) return null
 
-  const tables: { tableId: string; numbers: number[] }[] = []
+  const tables: LobbyTableHistory[] = []
 
   for (const [tableId, tableData] of Object.entries(raw)) {
     if (!isRecord(tableData)) continue
@@ -111,7 +114,7 @@ async function processCapturedPayload(responseData: InterceptedNetworkPayload): 
 
     const lobbyHistories = extractLobbyHistories(responseData)
     if (lobbyHistories !== null) {
-      chrome.storage.local.set({ evolutionLobbyHistories: lobbyHistories })
+      await saveLobbyHistories(lobbyHistories, responseData)
       return
     }
 
@@ -1100,6 +1103,34 @@ function findExistingRouletteResultIndex(results: RouletteSpinResult[], candidat
   return results.findIndex(
     (entry) => entry.id === candidate.id && entry.provider === candidate.provider && entry.source === candidate.source
   )
+}
+
+async function saveLobbyHistories(
+  lobbyHistories: LobbyTableHistory[],
+  responseData: InterceptedNetworkPayload
+): Promise<void> {
+  const capture: RouletteLobbyHistoriesCapture = {
+    histories: lobbyHistories.map(({ tableId, numbers }) => ({
+      tableId,
+      numbers: [...numbers]
+    })),
+    pageUrl: window.location.href,
+    captureUrl: responseData.url,
+    timestamp: responseData.timestamp ?? Date.now()
+  }
+
+  const nextSignature = JSON.stringify(capture.histories)
+  if (nextSignature === lastLobbyHistoriesSignature) {
+    return
+  }
+
+  lastLobbyHistoriesSignature = nextSignature
+
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ evolutionLobbyHistories: capture.histories, evolutionLobbyHistoriesCapture: capture }, () => {
+      resolve()
+    })
+  })
 }
 
 async function saveGameResults(candidates: GameResult[]): Promise<void> {

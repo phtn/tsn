@@ -32,6 +32,11 @@ export interface PragmaticPlayMessage {
   gameresult: PragmaticPlayGameResult
 }
 
+export interface LobbyTableHistory {
+  tableId: string
+  numbers: number[]
+}
+
 interface RouletteSpinResultBase {
   id: string
   provider: 'stake' | 'bet88'

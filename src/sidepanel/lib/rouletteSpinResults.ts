@@ -1,12 +1,15 @@
+import {
+  normalizeRelayEndpointConfig,
+  postJsonToEndpoint,
+  resolveRelayEndpointUrl,
+  type RelayEndpointConfig
+} from '@/src/lib/relayEndpoints'
 import type { KimAlgoBetPlan, KimAlgoStep, KimQuadrantId, KimSpreadSelectionMode } from '@/src/lib/roulette'
 import type { TableState } from '@/src/types/roulette'
 
 type RouletteBetStatus = 'missed' | 'ok' | 'placing' | 'idle'
 
-export interface RouletteResultEndpointConfig {
-  baseUrl: string
-  endpoint: string
-}
+export type RouletteResultEndpointConfig = RelayEndpointConfig
 
 export interface RouletteBetSlotPayload {
   number: number
@@ -285,38 +288,24 @@ export function buildRouletteWaitingSpinResultPayload({
   }
 }
 
-export function resolveRouletteResultEndpointUrl(config: RouletteResultEndpointConfig): string {
-  const baseUrl = config.baseUrl.trim().replace(/\/+$/, '')
-  const endpoint = config.endpoint.trim()
-
-  if (/^https?:\/\//i.test(endpoint)) {
-    return endpoint
+export function getDefaultRouletteResultEndpointConfig(devServerPort: number): RouletteResultEndpointConfig {
+  return {
+    baseUrl: `http://localhost:${devServerPort}`,
+    endpoint: '/api/bets/r1'
   }
+}
 
-  const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`
-  return `${baseUrl}${normalizedEndpoint}`
+export function normalizeRouletteResultEndpointConfig(
+  value: unknown,
+  devServerPort: number
+): RouletteResultEndpointConfig {
+  return normalizeRelayEndpointConfig(value, getDefaultRouletteResultEndpointConfig(devServerPort))
+}
+
+export function resolveRouletteResultEndpointUrl(config: RouletteResultEndpointConfig): string {
+  return resolveRelayEndpointUrl(config)
 }
 
 export async function sendRouletteSpinResult(payload: RouletteSpinResultPayload, endpointUrl: string): Promise<void> {
-  const endpoint = endpointUrl.trim()
-  if (!endpoint) {
-    console.warn('[roulette] result endpoint is empty')
-    return
-  }
-
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    })
-
-    if (!response.ok) {
-      console.warn(`[roulette] endpoint responded with status ${response.status}`)
-    }
-  } catch (error) {
-    console.debug('[roulette] result endpoint not available:', error)
-  }
+  await postJsonToEndpoint(payload, endpointUrl, 'roulette result')
 }

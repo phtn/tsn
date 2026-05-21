@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SAMPLE_SPIN_TAPE } from '../../../lib/roulette'
 import type { PanelStatus } from '../../../types'
-import type { RouletteStoredData, TableState } from '../../../types/roulette'
+import type { LobbyTableHistory, RouletteStoredData, TableState } from '../../../types/roulette'
+import type { RouletteLobbyHistoriesEndpointConfig } from '../../../lib/rouletteLobbyHistories'
 import type { RouletteResultEndpointConfig } from '../../lib/rouletteSpinResults'
 import { Analytics } from './roulette-analytics'
 import { RouletteHeader } from './roulette-header'
@@ -15,10 +16,13 @@ interface RouletteWorkspaceProps {
   evolutionBettingOpen: boolean
   evolutionRecentNumbers: number[]
   evolutionTableState: TableState | null
-  evolutionLobbyHistories: { tableId: string; numbers: number[] }[]
+  evolutionLobbyHistories: LobbyTableHistory[]
   rouletteResultEndpointConfig: RouletteResultEndpointConfig
   rouletteResultEndpointUrl: string
+  rouletteLobbyHistoriesEndpointConfig: RouletteLobbyHistoriesEndpointConfig
+  rouletteLobbyHistoriesEndpointUrl: string
   saveRouletteResultEndpointConfig: (config: RouletteResultEndpointConfig) => void
+  saveRouletteLobbyHistoriesEndpointConfig: (config: RouletteLobbyHistoriesEndpointConfig) => void
   onReset: () => void
 }
 
@@ -33,7 +37,10 @@ export function RouletteWorkspace({
   evolutionLobbyHistories,
   rouletteResultEndpointConfig,
   rouletteResultEndpointUrl,
+  rouletteLobbyHistoriesEndpointConfig,
+  rouletteLobbyHistoriesEndpointUrl,
   saveRouletteResultEndpointConfig,
+  saveRouletteLobbyHistoriesEndpointConfig,
   onReset
 }: RouletteWorkspaceProps) {
   // ── Live winning-numbers sequence ─────────────────────────────────────────
@@ -45,11 +52,18 @@ export function RouletteWorkspace({
   const prevRecentRef = useRef<number[]>([])
   const [liveWinningNumbers, setLiveWinningNumbers] = useState<number[]>([])
   const [relaySettingsVisible, setRelaySettingsVisible] = useState(false)
-  const [endpointDraft, setEndpointDraft] = useState<RouletteResultEndpointConfig>(rouletteResultEndpointConfig)
+  const [resultEndpointDraft, setResultEndpointDraft] =
+    useState<RouletteResultEndpointConfig>(rouletteResultEndpointConfig)
+  const [lobbyHistoriesEndpointDraft, setLobbyHistoriesEndpointDraft] =
+    useState<RouletteLobbyHistoriesEndpointConfig>(rouletteLobbyHistoriesEndpointConfig)
 
   useEffect(() => {
-    setEndpointDraft(rouletteResultEndpointConfig)
+    setResultEndpointDraft(rouletteResultEndpointConfig)
   }, [rouletteResultEndpointConfig])
+
+  useEffect(() => {
+    setLobbyHistoriesEndpointDraft(rouletteLobbyHistoriesEndpointConfig)
+  }, [rouletteLobbyHistoriesEndpointConfig])
 
   useEffect(() => {
     const prev = prevRecentRef.current
@@ -109,41 +123,84 @@ export function RouletteWorkspace({
         rouletteResultEndpointUrl={rouletteResultEndpointUrl}
       />
       <Analytics lobbyHistories={evolutionLobbyHistories} onReset={handleReset} results={stats.results} />
-      <div className='flex items-center space-x-4'>
+      <div className='mt-4 flex items-start gap-4'>
         {relaySettingsVisible ? (
-          <div className='mt-4 flex gap-2'>
-            <input
-              type='url'
-              value={endpointDraft.baseUrl}
-              onChange={(event) =>
-                setEndpointDraft({
-                  ...endpointDraft,
-                  baseUrl: event.target.value
-                })
-              }
-              className='flex-1 rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-[#c208fc] outline-none transition focus:border-slate-900'
-              placeholder='http://localhost:3000'
-            />
-            <input
-              type='text'
-              value={endpointDraft.endpoint}
-              onChange={(event) =>
-                setEndpointDraft({
-                  ...endpointDraft,
-                  endpoint: event.target.value
-                })
-              }
-              className='flex-1 rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-[#c208fc] outline-none transition focus:border-slate-900'
-              placeholder='/api/roulette-results'
-            />
-            <button
-              onClick={() => saveRouletteResultEndpointConfig(endpointDraft)}
-              className='rounded-[18px] bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800'>
-              Save
-            </button>
+          <div className='flex-1 space-y-3'>
+            <div className='space-y-2 rounded-[18px] border border-white/10 bg-black/20 p-3'>
+              <p className='text-xs font-semibold uppercase tracking-[0.24em] text-white/70'>Spin Results Relay</p>
+              <div className='flex gap-2'>
+                <input
+                  type='url'
+                  value={resultEndpointDraft.baseUrl}
+                  onChange={(event) =>
+                    setResultEndpointDraft({
+                      ...resultEndpointDraft,
+                      baseUrl: event.target.value
+                    })
+                  }
+                  className='flex-1 rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-[#c208fc] outline-none transition focus:border-slate-900'
+                  placeholder='http://localhost:3000'
+                />
+                <input
+                  type='text'
+                  value={resultEndpointDraft.endpoint}
+                  onChange={(event) =>
+                    setResultEndpointDraft({
+                      ...resultEndpointDraft,
+                      endpoint: event.target.value
+                    })
+                  }
+                  className='flex-1 rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-[#c208fc] outline-none transition focus:border-slate-900'
+                  placeholder='/api/roulette-results'
+                />
+                <button
+                  onClick={() => saveRouletteResultEndpointConfig(resultEndpointDraft)}
+                  className='rounded-[18px] bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800'>
+                  Save
+                </button>
+              </div>
+            </div>
+
+            <div className='space-y-2 rounded-[18px] border border-white/10 bg-black/20 p-3'>
+              <p className='text-xs font-semibold uppercase tracking-[0.24em] text-white/70'>Lobby Histories Relay</p>
+              <div className='flex gap-2'>
+                <input
+                  type='url'
+                  value={lobbyHistoriesEndpointDraft.baseUrl}
+                  onChange={(event) =>
+                    setLobbyHistoriesEndpointDraft({
+                      ...lobbyHistoriesEndpointDraft,
+                      baseUrl: event.target.value
+                    })
+                  }
+                  className='flex-1 rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-[#c208fc] outline-none transition focus:border-slate-900'
+                  placeholder='http://localhost:3000'
+                />
+                <input
+                  type='text'
+                  value={lobbyHistoriesEndpointDraft.endpoint}
+                  onChange={(event) =>
+                    setLobbyHistoriesEndpointDraft({
+                      ...lobbyHistoriesEndpointDraft,
+                      endpoint: event.target.value
+                    })
+                  }
+                  className='flex-1 rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-[#c208fc] outline-none transition focus:border-slate-900'
+                  placeholder='/api/roulette-lobby-histories'
+                />
+                <button
+                  onClick={() => saveRouletteLobbyHistoriesEndpointConfig(lobbyHistoriesEndpointDraft)}
+                  className='rounded-[18px] bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800'>
+                  Save
+                </button>
+              </div>
+            </div>
           </div>
         ) : (
-          <p className='mt-4 text-sm font-semibold text-[#46D266]'>{rouletteResultEndpointUrl}</p>
+          <div className='flex-1 space-y-1 text-sm font-semibold text-[#46D266]'>
+            <p>{rouletteResultEndpointUrl}</p>
+            <p>{rouletteLobbyHistoriesEndpointUrl}</p>
+          </div>
         )}
 
         <button

@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useMemo, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { deriveVirtualBankroll } from '../lib/virtual-bankroll'
 import {
   EMPTY_STORED_DATA,
@@ -16,6 +16,7 @@ import {
   summarizeRouletteResults,
   TableState,
   type EvolutionRouletteSpinResult,
+  type LobbyTableHistory,
   type RouletteStoredData
 } from '../types/roulette'
 import { EMPTY_TENNIS_STORED_DATA, normalizeTennisStoredData, type TennisStoredData } from '../types/tennis'
@@ -26,9 +27,21 @@ import { MainHeader } from './components/shared/header'
 import { TennisWorkspace } from './components/tennis/tennis-workspace'
 import { getNetTone } from './lib/formatters'
 import {
+  getDefaultRouletteResultEndpointConfig,
+  normalizeRouletteResultEndpointConfig,
   resolveRouletteResultEndpointUrl,
   type RouletteResultEndpointConfig
 } from './lib/rouletteSpinResults'
+import {
+  buildRouletteLobbyHistoriesPayload,
+  getDefaultRouletteLobbyHistoriesEndpointConfig,
+  normalizeRouletteLobbyHistoriesCapture,
+  normalizeRouletteLobbyHistoriesEndpointConfig,
+  resolveRouletteLobbyHistoriesEndpointUrl,
+  sendRouletteLobbyHistories,
+  type RouletteLobbyHistoriesCapture,
+  type RouletteLobbyHistoriesEndpointConfig
+} from '../lib/rouletteLobbyHistories'
 
 const INITIAL_STATUS: PanelStatus = { connected: false, message: 'Checking the active tab...', site: null }
 
@@ -45,25 +58,11 @@ function getStoredPort(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 3000
 }
 
-function getDefaultRouletteResultEndpointConfig(devServerPort: number): RouletteResultEndpointConfig {
-  return {
-    baseUrl: `http://localhost:${devServerPort}`,
-    endpoint: '/api/roulette-results'
-  }
-}
-
-function normalizeRouletteResultEndpointConfig(value: unknown, devServerPort: number): RouletteResultEndpointConfig {
-  const fallback = getDefaultRouletteResultEndpointConfig(devServerPort)
-
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return fallback
-  }
-
-  const record = value as Record<string, unknown>
-  return {
-    baseUrl: typeof record.baseUrl === 'string' && record.baseUrl.trim() ? record.baseUrl : fallback.baseUrl,
-    endpoint: typeof record.endpoint === 'string' && record.endpoint.trim() ? record.endpoint : fallback.endpoint
-  }
+function sameEndpointConfig(
+  left: RouletteResultEndpointConfig | RouletteLobbyHistoriesEndpointConfig,
+  right: RouletteResultEndpointConfig | RouletteLobbyHistoriesEndpointConfig
+): boolean {
+  return left.baseUrl === right.baseUrl && left.endpoint === right.endpoint
 }
 
 const App = () => {
@@ -74,6 +73,8 @@ const App = () => {
   const [rouletteResultEndpointConfig, setRouletteResultEndpointConfig] = useState<RouletteResultEndpointConfig>(
     getDefaultRouletteResultEndpointConfig(3000)
   )
+  const [rouletteLobbyHistoriesEndpointConfig, setRouletteLobbyHistoriesEndpointConfig] =
+    useState<RouletteLobbyHistoriesEndpointConfig>(getDefaultRouletteLobbyHistoriesEndpointConfig(3000))
   const [virtualBankroll, setVirtualBankroll] = useState<VirtualBankrollState>(EMPTY_VIRTUAL_BANKROLL)
   const [rouletteStats, setRouletteStats] = useState<RouletteStoredData>(EMPTY_ROULETTE_STORED_DATA)
   const [tennisStats, setTennisStats] = useState<TennisStoredData>(EMPTY_TENNIS_STORED_DATA)
@@ -82,9 +83,12 @@ const App = () => {
   const [evolutionBettingOpen, setEvolutionBettingOpen] = useState<boolean>(false)
   const [evolutionRecentNumbers, setEvolutionRecentNumbers] = useState<number[]>([])
   const [evolutionTableState, setEvolutionTableState] = useState<TableState | null>(null)
-  const [evolutionLobbyHistories, setEvolutionLobbyHistories] = useState<{ tableId: string; numbers: number[] }[]>([])
+  const [evolutionLobbyHistories, setEvolutionLobbyHistories] = useState<LobbyTableHistory[]>([])
+  const [evolutionLobbyHistoriesCapture, setEvolutionLobbyHistoriesCapture] =
+    useState<RouletteLobbyHistoriesCapture | null>(null)
   const [activeGameClass, setActiveGameClass] = useState<GameClassView>('roulette')
   const [showSettings, setShowSettings] = useState(false)
+  const lastLobbyHistoriesRelaySignatureRef = useRef('')
   // ─── loaders ──────────────────────────────────────────────────────────────
 
   const loadStats = () => {
@@ -107,8 +111,21 @@ const App = () => {
       startTransition(() => {
         const nextPort = getStoredPort(data.devServerPort)
         const nextConfig = normalizeRouletteResultEndpointConfig(data.rouletteResultEndpointConfig, nextPort)
-        setRouletteResultEndpointConfig((current) =>
-          current.baseUrl === nextConfig.baseUrl && current.endpoint === nextConfig.endpoint ? current : nextConfig
+        setRouletteResultEndpointConfig((current) => (sameEndpointConfig(current, nextConfig) ? current : nextConfig))
+      })
+    })
+  }
+
+  const loadRouletteLobbyHistoriesEndpointConfig = () => {
+    chrome.storage.local.get(['devServerPort', 'rouletteLobbyHistoriesEndpointConfig'], (data) => {
+      startTransition(() => {
+        const nextPort = getStoredPort(data.devServerPort)
+        const nextConfig = normalizeRouletteLobbyHistoriesEndpointConfig(
+          data.rouletteLobbyHistoriesEndpointConfig,
+          nextPort
+        )
+        setRouletteLobbyHistoriesEndpointConfig((current) =>
+          sameEndpointConfig(current, nextConfig) ? current : nextConfig
         )
       })
     })
@@ -140,7 +157,8 @@ const App = () => {
         'evolutionBettingOpen',
         'evolutionRecentNumbers',
         'evolutionTableState',
-        'evolutionLobbyHistories'
+        'evolutionLobbyHistories',
+        'evolutionLobbyHistoriesCapture'
       ],
       (data) => {
         const chips = Array.isArray(data.evolutionChips)
@@ -153,13 +171,15 @@ const App = () => {
           : []
         const lobbyHistories = Array.isArray(data.evolutionLobbyHistories)
           ? (data.evolutionLobbyHistories as unknown[]).filter(
-              (v): v is { tableId: string; numbers: number[] } =>
+              (v): v is LobbyTableHistory =>
                 typeof v === 'object' &&
                 v !== null &&
                 typeof (v as Record<string, unknown>).tableId === 'string' &&
                 Array.isArray((v as Record<string, unknown>).numbers)
             )
           : []
+        const lobbyHistoriesCapture = normalizeRouletteLobbyHistoriesCapture(data.evolutionLobbyHistoriesCapture)
+        const lobbyHistoriesSignature = JSON.stringify(lobbyHistories)
         startTransition(() => {
           setEvolutionChips((prev) => {
             const next = chips as number[]
@@ -172,6 +192,30 @@ const App = () => {
             typeof data.evolutionTableState === 'string' ? (data.evolutionTableState as TableState) : null
           )
           setEvolutionLobbyHistories(lobbyHistories)
+          setEvolutionLobbyHistoriesCapture((prev) => {
+            if (lobbyHistoriesCapture) {
+              return lobbyHistoriesCapture
+            }
+
+            if (lobbyHistories.length === 0) {
+              return null
+            }
+
+            const prevSignature = prev ? JSON.stringify(prev.histories) : ''
+            if (prevSignature === lobbyHistoriesSignature) {
+              return prev
+            }
+
+            return {
+              histories: lobbyHistories.map(({ tableId, numbers }) => ({
+                tableId,
+                numbers: [...numbers]
+              })),
+              pageUrl: '',
+              captureUrl: '',
+              timestamp: Date.now()
+            }
+          })
         })
       }
     )
@@ -259,6 +303,21 @@ const App = () => {
     })
   }, [devServerPort])
 
+  const saveRouletteLobbyHistoriesEndpointConfig = useCallback(
+    (config: RouletteLobbyHistoriesEndpointConfig) => {
+      const fallback = getDefaultRouletteLobbyHistoriesEndpointConfig(devServerPort)
+      const nextConfig: RouletteLobbyHistoriesEndpointConfig = {
+        baseUrl: config.baseUrl.trim() || fallback.baseUrl,
+        endpoint: config.endpoint.trim() || fallback.endpoint
+      }
+
+      chrome.storage.local.set({ rouletteLobbyHistoriesEndpointConfig: nextConfig }, () => {
+        startTransition(() => setRouletteLobbyHistoriesEndpointConfig(nextConfig))
+      })
+    },
+    [devServerPort]
+  )
+
   const enableVirtualBankroll = useCallback(
     (seedBalance: number, baseBetAmount: number) => {
       persistVirtualBankroll({
@@ -317,6 +376,7 @@ const App = () => {
     loadStats()
     loadDevServerPort()
     loadRouletteResultEndpointConfig()
+    loadRouletteLobbyHistoriesEndpointConfig()
     loadVirtualBankroll()
     loadRouletteResults()
     loadTennisResults()
@@ -327,6 +387,9 @@ const App = () => {
       if (changes.casinoResults) loadStats()
       if (changes.devServerPort) loadDevServerPort()
       if (changes.devServerPort || changes.rouletteResultEndpointConfig) loadRouletteResultEndpointConfig()
+      if (changes.devServerPort || changes.rouletteLobbyHistoriesEndpointConfig) {
+        loadRouletteLobbyHistoriesEndpointConfig()
+      }
       if (changes.virtualBankroll) loadVirtualBankroll()
       if (changes.rouletteResults) loadRouletteResults()
       if (changes.tennisResults) loadTennisResults()
@@ -336,7 +399,8 @@ const App = () => {
         changes.evolutionBettingOpen ||
         changes.evolutionRecentNumbers ||
         changes.evolutionTableState ||
-        changes.evolutionLobbyHistories
+        changes.evolutionLobbyHistories ||
+        changes.evolutionLobbyHistoriesCapture
       ) {
         loadEvolutionChips()
       }
@@ -451,6 +515,25 @@ const App = () => {
     () => resolveRouletteResultEndpointUrl(rouletteResultEndpointConfig),
     [rouletteResultEndpointConfig]
   )
+  const rouletteLobbyHistoriesEndpointUrl = useMemo(
+    () => resolveRouletteLobbyHistoriesEndpointUrl(rouletteLobbyHistoriesEndpointConfig),
+    [rouletteLobbyHistoriesEndpointConfig]
+  )
+
+  useEffect(() => {
+    if (!evolutionLobbyHistoriesCapture || evolutionLobbyHistoriesCapture.histories.length === 0) {
+      return
+    }
+
+    const relaySignature = `${rouletteLobbyHistoriesEndpointUrl}::${JSON.stringify(evolutionLobbyHistoriesCapture)}`
+    if (lastLobbyHistoriesRelaySignatureRef.current === relaySignature) {
+      return
+    }
+
+    lastLobbyHistoriesRelaySignatureRef.current = relaySignature
+    const payload = buildRouletteLobbyHistoriesPayload(evolutionLobbyHistoriesCapture)
+    void sendRouletteLobbyHistories(payload, rouletteLobbyHistoriesEndpointUrl)
+  }, [evolutionLobbyHistoriesCapture, rouletteLobbyHistoriesEndpointUrl])
 
   // ─── render ────────────────────────────────────────────────────────────────
 
@@ -493,7 +576,10 @@ const App = () => {
             evolutionLobbyHistories={evolutionLobbyHistories}
             rouletteResultEndpointConfig={rouletteResultEndpointConfig}
             rouletteResultEndpointUrl={rouletteResultEndpointUrl}
+            rouletteLobbyHistoriesEndpointConfig={rouletteLobbyHistoriesEndpointConfig}
+            rouletteLobbyHistoriesEndpointUrl={rouletteLobbyHistoriesEndpointUrl}
             saveRouletteResultEndpointConfig={saveRouletteResultEndpointConfig}
+            saveRouletteLobbyHistoriesEndpointConfig={saveRouletteLobbyHistoriesEndpointConfig}
             onReset={clearRouletteResults}
           />
         ) : (
