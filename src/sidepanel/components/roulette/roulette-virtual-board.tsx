@@ -564,7 +564,7 @@ export function RouletteVirtualBoard({
           const ok = !chrome.runtime.lastError && response?.ok && missed.length === 0
 
           setPlacedLog((prev) => [...prev, [...new Set(placed)]])
-          console.log(`[kim] R${round} placed on table: [${placed.join(', ')}]`)
+          console.log(`[K] R${round} placed on table: [${placed.join(', ')}]`)
 
           setBetStatus(ok ? 'ok' : 'missed')
           setTimeout(() => setBetStatus('idle'), 4000)
@@ -743,8 +743,7 @@ export function RouletteVirtualBoard({
                     nums.forEach((n) => seenDisplay.add(n))
                     if (displayNums.length === 0) return null
                     const step = simulation.steps[idx]
-                    const isWin =
-                      step != null && placedNumbersPerTrackedStep[idx]?.includes(step.landedNumber)
+                    const isWin = step != null && placedNumbersPerTrackedStep[idx]?.includes(step.landedNumber)
                     return (
                       <Fragment key={idx}>
                         {idx > 0 && <span className='shrink-0 text-slate-400 text-[0.55rem] font-thin'>│</span>}

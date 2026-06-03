@@ -26,6 +26,7 @@ function getTableName(spin: RouletteSpinResult | null): string {
 export const RouletteHeader = ({ stats, latestSpin, previewSpins }: RouletteHeaderProps) => {
   const providerLabel = getProviderLabel(latestSpin)
   const tableName = getTableName(latestSpin)
+  const recents = latestSpin ? previewSpins.slice(0, 12) : previewSpins.slice(0, 10)
 
   return (
     <section className='relative overflow-hidden rounded-xs border-t border-white/12 bg-[#1F2020] p-4 text-white'>
@@ -50,8 +51,8 @@ export const RouletteHeader = ({ stats, latestSpin, previewSpins }: RouletteHead
             className={cn(
               `flex items-center justify-center rounded-full border border-emerald-300/25 bg-emerald-300/10 h-12 w-auto aspect-square uppercase text-emerald-100 ${getNumberTone(latestSpin?.winningNumber)} border-3! border-white/15 shadow-inner`
             )}>
-            <span className={cn('font-medium text-xs text-center', { 'text-xl font-bold': stats.totalSpins > 0 })}>
-              {stats.totalSpins > 0 ? previewSpins[0] : 'Awaiting Spins'}
+            <span className={cn('font-medium text-xs text-center', { 'text-xl font-bold': latestSpin !== null })}>
+              {latestSpin ? previewSpins[0] : 'Awaiting Spins'}
             </span>
           </div>
         </div>
@@ -61,7 +62,7 @@ export const RouletteHeader = ({ stats, latestSpin, previewSpins }: RouletteHead
             <p className='text-xs text-slate-500'>{latestSpin ? latestSpin.description : 'Listening for spins'}</p>
           </div>*/}
           <div className='flex flex-wrap gap-1.5 w-full'>
-            {previewSpins.slice(0, 10).map((value, index) => (
+            {recents.map((value, index) => (
               <div
                 key={`preview-spin-${value}-${index}`}
                 className={`inline-flex h-8 min-w-8 items-center justify-center rounded-full border px-2 text-sm font-semibold ${getNumberTone(value)}`}>

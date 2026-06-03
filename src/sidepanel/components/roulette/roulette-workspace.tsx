@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { SAMPLE_SPIN_TAPE } from '../../../lib/roulette'
 import type { PanelStatus } from '../../../types'
-import type { LobbyTableHistory, RouletteStoredData, TableState } from '../../../types/roulette'
+import type { LobbyTableHistory, RouletteSpinResult, RouletteStoredData, TableState } from '../../../types/roulette'
 import type { RouletteLobbyHistoriesEndpointConfig } from '../../../lib/rouletteLobbyHistories'
 import type { RouletteResultEndpointConfig } from '../../lib/rouletteSpinResults'
 import { Analytics } from './roulette-analytics'
@@ -101,6 +101,28 @@ export function RouletteWorkspace({
   }, [onReset, evolutionRecentNumbers])
 
   const recentSpins = stats.results.slice(-10).reverse()
+  const liveLatestSpin = useMemo<RouletteSpinResult | null>(() => {
+    const winningNumber = evolutionRecentNumbers[0]
+    if (typeof winningNumber !== 'number') return null
+
+    return {
+      id: `live-evolution-${winningNumber}`,
+      provider: 'stake',
+      source: 'evolution',
+      game: 'roulette',
+      description: '',
+      winningNumber,
+      timestamp: Date.now(),
+      updatedAt: new Date().toISOString(),
+      url: '',
+      eventType: 'winSpots',
+      gameId: '',
+      code: '',
+      winSpots: {},
+      resultNumbers: [winningNumber]
+    }
+  }, [evolutionRecentNumbers])
+
   const previewSpins =
     evolutionRecentNumbers.length > 0
       ? evolutionRecentNumbers
@@ -108,7 +130,7 @@ export function RouletteWorkspace({
         ? recentSpins.map((result) => result.winningNumber)
         : SAMPLE_SPIN_TAPE
 
-  const latestSpin = recentSpins[0] ?? null
+  const latestSpin = liveLatestSpin ?? recentSpins[0] ?? null
 
   return (
     <div className='space-y-0 pb-6 bg-[#1F2020]'>
