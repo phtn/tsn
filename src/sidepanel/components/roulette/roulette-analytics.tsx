@@ -15,9 +15,9 @@ type AnalyticsProps = {
 }
 
 export const Analytics: FC<AnalyticsProps> = ({ results, lobbyHistories = [], onReset }) => {
-  const winningNumbers = results.map((result) => result.winningNumber).flat()
+  const winningNumbers = results.map((result) => result.winningNumber).flat().reverse()
   const stats = useMemo(() => {
-    const total = results.map((result) => result.winningNumber).length
+    const total = winningNumbers.length
     if (total === 0) {
       return {
         zero: { count: 0, pct: 0 },

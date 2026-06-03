@@ -44,7 +44,7 @@ export interface KimAlgoStep {
   landedNumber: number
   bet: KimAlgoBetPlan
   hit: boolean
-  hitType: 'quadrant' | 'zero' | 'miss'
+  hitType: 'quadrant' | 'spread' | 'zero' | 'miss'
   sessionOutcome: 'continue' | 'reset_after_win' | 'reset_after_max_loss'
   selection: KimAlgoSelection
   nextRound: KimAlgoRound
@@ -90,7 +90,7 @@ export const KIMS_ALGO_ASSUMPTIONS = [
   'The YAML is treated as authoritative for all quadrant definitions, including q5 = [13, 14, 17, 16].',
   'The round ladder counts straight-up number placements, not unique board coverage: round 1 places 4 numbers, round 2 places 8, round 3 places 12, round 4 places 16 plus zero, and round 5 places 20 plus zero.',
   'Per-number stake progression is interpreted as [1x, 1x, 2x, 4x, 8x].',
-  'Overlap mode defaults to off. When a new quadrant would overlap existing placements, the overlapping slots are replaced by hot-prioritized local spread picks. Win detection uses quadrantNumbers — the subset of placed numbers that also belong to an active quadrant definition — so spread fills never trigger a win and displaced quadrant numbers (not physically placed) are also excluded.',
+  'Overlap mode defaults to off. When a new quadrant would overlap existing placements, the overlapping slots are replaced by hot-prioritized local spread picks. Win detection prefers the actually placed numbers when available and falls back to the full bet plan, so spread fills can still resolve as wins while displaced quadrant numbers (not physically placed) are excluded.',
   'Idle auto-start uses the latest two logged numbers when they share a quadrant; shared top-vs-bottom ties are broken by hot-number density, then hot rank, then current quadrant.',
   'Zero is hedged on rounds 4 and 5 with the same per-number stake used on the quadrant.',
   'After each miss, the next quadrant is chosen from the landed number and added to the active sequence before the next round begins.',
@@ -579,10 +579,10 @@ export function simulateKimsAlgo(spins: readonly number[], options: Partial<KimA
     // Use actually-placed numbers from Evolution when available; fall back to the
     // computed quadrant numbers so the standalone simulator keeps its theoretical behavior.
     const actualPlaced = resolvedOptions.placedNumbersPerStep?.[index]
-    const landedOnPlacedNumber = actualPlaced
-      ? actualPlaced.includes(landedNumber)
-      : bet.quadrantNumbers.includes(landedNumber)
-    const hitQuadrant = landedNumber !== 0 && landedOnPlacedNumber
+    const placedNumbers = actualPlaced ?? bet.numbers
+    const hitOnQuadrant = landedNumber !== 0 && bet.quadrantNumbers.includes(landedNumber)
+    const hitOnSpread = landedNumber !== 0 && !hitOnQuadrant && placedNumbers.includes(landedNumber)
+    const hitQuadrant = hitOnQuadrant || hitOnSpread
 
     console.log(
       `[kim] spin ${index + 1} | R${activeRound} | quadrants: [${activeQuadrants.join(', ')}]` +
@@ -633,7 +633,7 @@ export function simulateKimsAlgo(spins: readonly number[], options: Partial<KimA
       landedNumber,
       bet,
       hit,
-      hitType: hitQuadrant ? 'quadrant' : hitZero ? 'zero' : 'miss',
+      hitType: hitOnQuadrant ? 'quadrant' : hitOnSpread ? 'spread' : hitZero ? 'zero' : 'miss',
       sessionOutcome,
       selection,
       nextRound,

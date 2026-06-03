@@ -584,7 +584,6 @@ export function RouletteVirtualBoard({
       clearTimeout(timer)
       claimedStepRef.current = -1 // release claim without dispatching — next window can retry
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [evolutionTableState, loaded, isTracking, selectedChip])
   // ^ placementMap/roundMultiplier/nextBet/simulation.steps.length intentionally
   //   omitted from deps — snapshotted into locals (or read via ref) at fire time.

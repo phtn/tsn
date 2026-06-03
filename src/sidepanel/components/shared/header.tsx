@@ -71,7 +71,7 @@ export const MainHeader = ({ status, stats, latestGame, onGameClassChange, gameC
             </div>
             <div>
               <h1 className='font-display mt-1 text-lg font-bold leading-4 drop-shadow-px drop-shadow-black text-white!'>
-                3&middot;6&middot;9
+                36&middot;Stake St
               </h1>
             </div>
           </div>

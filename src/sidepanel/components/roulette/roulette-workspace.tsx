@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { SAMPLE_SPIN_TAPE } from '../../../lib/roulette'
+import type { RouletteLobbyHistoriesEndpointConfig } from '../../../lib/rouletteLobbyHistories'
 import type { PanelStatus } from '../../../types'
 import type { LobbyTableHistory, RouletteSpinResult, RouletteStoredData, TableState } from '../../../types/roulette'
-import type { RouletteLobbyHistoriesEndpointConfig } from '../../../lib/rouletteLobbyHistories'
 import type { RouletteResultEndpointConfig } from '../../lib/rouletteSpinResults'
 import { Analytics } from './roulette-analytics'
 import { RouletteHeader } from './roulette-header'
@@ -54,8 +53,9 @@ export function RouletteWorkspace({
   const [relaySettingsVisible, setRelaySettingsVisible] = useState(false)
   const [resultEndpointDraft, setResultEndpointDraft] =
     useState<RouletteResultEndpointConfig>(rouletteResultEndpointConfig)
-  const [lobbyHistoriesEndpointDraft, setLobbyHistoriesEndpointDraft] =
-    useState<RouletteLobbyHistoriesEndpointConfig>(rouletteLobbyHistoriesEndpointConfig)
+  const [lobbyHistoriesEndpointDraft, setLobbyHistoriesEndpointDraft] = useState<RouletteLobbyHistoriesEndpointConfig>(
+    rouletteLobbyHistoriesEndpointConfig
+  )
 
   useEffect(() => {
     setResultEndpointDraft(rouletteResultEndpointConfig)
@@ -100,7 +100,6 @@ export function RouletteWorkspace({
     prevRecentRef.current = evolutionRecentNumbers
   }, [onReset, evolutionRecentNumbers])
 
-  const recentSpins = stats.results.slice(-10).reverse()
   const liveLatestSpin = useMemo<RouletteSpinResult | null>(() => {
     const winningNumber = evolutionRecentNumbers[0]
     if (typeof winningNumber !== 'number') return null
@@ -123,14 +122,15 @@ export function RouletteWorkspace({
     }
   }, [evolutionRecentNumbers])
 
-  const previewSpins =
-    evolutionRecentNumbers.length > 0
-      ? evolutionRecentNumbers
-      : recentSpins.length > 0
-        ? recentSpins.map((result) => result.winningNumber)
-        : SAMPLE_SPIN_TAPE
+  const storedRecentSpins = useMemo(
+    () => stats.results.slice(-12).reverse().map((result) => result.winningNumber),
+    [stats.results]
+  )
+  const storedLatestSpin = stats.results[stats.results.length - 1] ?? null
 
-  const latestSpin = liveLatestSpin ?? recentSpins[0] ?? null
+  const previewSpins = evolutionRecentNumbers.length > 0 ? evolutionRecentNumbers : storedRecentSpins
+
+  const latestSpin = liveLatestSpin ?? storedLatestSpin
 
   return (
     <div className='space-y-0 pb-6 bg-[#1F2020]'>

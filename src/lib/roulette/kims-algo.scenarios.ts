@@ -21,6 +21,12 @@ export const KIMS_ALGO_SCENARIOS: KimAlgoScenario[] = [
     spins: [1, 13, 31, 0, 29]
   },
   {
+    label: 'Spread Fill Hit Regression',
+    startingQuadrant: 'q1',
+    baseUnit: 1,
+    spins: [6, 9]
+  },
+  {
     label: 'Five-Round Collapse Reset',
     startingQuadrant: 'q4',
     baseUnit: 1,
