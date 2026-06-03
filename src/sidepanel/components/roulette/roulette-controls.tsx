@@ -8,8 +8,8 @@ interface RouletteControlsProps {
   signalFound: boolean
   isTracking: boolean
   fmtAmt: (amt: number) => string
-  auto: boolean
-  toggleAuto: VoidFunction
+  autoMode: 'off' | 'semi' | 'auto'
+  toggleAutoMode: VoidFunction
   scatter: boolean
   toggleScatter: VoidFunction
   allowOverlaps: boolean
@@ -28,8 +28,8 @@ export const RouletteControls = ({
   signalFound,
   isTracking,
   fmtAmt,
-  auto,
-  toggleAuto,
+  autoMode,
+  toggleAutoMode,
   scatter,
   toggleScatter,
   allowOverlaps,
@@ -84,7 +84,7 @@ export const RouletteControls = ({
               className={cn(`h-5 min-w-5 bg-no-repeat object-contain`, {
                 'animate-pulse': signalFound && !isTracking,
                 'grayscale-75 opacity-40': !signalFound,
-                'opacity-10': auto
+                'opacity-10': autoMode !== 'off'
               })}
               style={{
                 backgroundImage: 'url(./icons/gem-lime.svg)',
@@ -144,18 +144,20 @@ export const RouletteControls = ({
           <div className='flex items-center'>
             <button
               type='button'
-              onClick={toggleAuto}
-              title='Auto-arm when a KIM signal is detected'
+              onClick={toggleAutoMode}
+              title='Auto-arm mode'
               className={cn(
-                'rounded-s-sm bg-white/5 border border-white/15 px-2 py-1 transition-colors',
+                'rounded-s-sm bg-white/5 border border-white/15 py-1 text-center w-12 transition-colors',
                 ' font-medium text-xs uppercase tracking-widest text-slate-400 hover:text-slate-200',
                 {
                   'border-white/80': isTracking,
-                  'bg-rose-800/10 text-white': auto,
-                  ' border-rose-300/60': auto && !isTracking
+                  'bg-rose-800/10 text-white border-slate-200/60': autoMode !== 'off',
+                  ' border-slate-200/60': autoMode !== 'off' && !isTracking,
+                  ' border-cyan-200/60': autoMode === 'semi' && !isTracking,
+                  ' border-rose-300/60': autoMode === 'auto' && !isTracking
                 }
               )}>
-              a/t
+              {autoMode === 'off' ? 'off' : autoMode === 'semi' ? 'M/T' : 'A/T'}
             </button>
 
             {/* Arm toggle */}

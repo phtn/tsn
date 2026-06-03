@@ -31,6 +31,7 @@ export interface RouletteSpinResultPayload {
     signalFound: boolean
     isTracking: boolean
     auto: boolean
+    autoMode: 'off' | 'semi' | 'auto'
     scatter: boolean
     allowOverlaps: boolean
     spreadSelectionMode: KimSpreadSelectionMode
