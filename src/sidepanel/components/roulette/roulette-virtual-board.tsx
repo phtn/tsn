@@ -75,6 +75,7 @@ export function RouletteVirtualBoard({
 
   const processedStepCountRef = useRef(0)
   const waitingSpinSentCountRef = useRef(winningNumbers.length)
+  const prevEvolutionTableStateRef = useRef<TableState | null>(evolutionTableState)
   // Edge-detection refs
   const prevSignalFoundRef = useRef(false)
   // lastBetStepRef: step for which bets were actually *dispatched* to the background.
@@ -304,6 +305,89 @@ export function RouletteVirtualBoard({
       })
       void sendRouletteSpinResult(payload, rouletteResultEndpointUrl)
     })
+  }, [
+    accPct,
+    accWinnings,
+    allowOverlaps,
+    auto,
+    autoStartingQuadrant,
+    baseUnit,
+    baseUnitInput,
+    betMultiplier,
+    betStatus,
+    evolutionTableState,
+    hotNumbers,
+    inputMode,
+    isTracking,
+    lastWinProfit,
+    loaded,
+    lockedBankValue,
+    nextBet,
+    rouletteResultEndpointUrl,
+    roundMultiplier,
+    scatter,
+    selectedChip,
+    signalFound,
+    signalQuadrants,
+    spreadSelectionMode,
+    startingQuadrant,
+    totalStaked,
+    trackedWinningNumbers.length,
+    winAmount,
+    winStreak,
+    winVerb,
+    winningNumbers
+  ])
+
+  // Send a fresh snapshot whenever the table state changes, even if no new
+  // winning number has arrived. This keeps the relay in sync with the board.
+  useEffect(() => {
+    const previousTableState = prevEvolutionTableStateRef.current
+    prevEvolutionTableStateRef.current = evolutionTableState
+
+    if (previousTableState === evolutionTableState) return
+
+    const currentWinningNumber = winningNumbers[winningNumbers.length - 1] ?? null
+    const payload = buildRouletteWaitingSpinResultPayload({
+      spinIndex: winningNumbers.length,
+      winningNumber: currentWinningNumber,
+      controls: {
+        winVerb,
+        lastWinProfit,
+        signalFound,
+        isTracking,
+        auto,
+        scatter,
+        allowOverlaps,
+        spreadSelectionMode,
+        loaded,
+        betStatus
+      },
+      virtualBoard: {
+        startingQuadrant,
+        baseUnit,
+        baseUnitInput,
+        inputMode,
+        selectedChip,
+        betMultiplier,
+        roundMultiplier,
+        totalStaked,
+        winAmount,
+        profit: winAmount - totalStaked,
+        accWinnings,
+        accPct,
+        winStreak,
+        lockedBankValue,
+        spins: winningNumbers.length,
+        trackedSpins: trackedWinningNumbers.length,
+        hotNumbers,
+        tableState: evolutionTableState
+      },
+      nextBet,
+      candidateQuadrants: signalQuadrants,
+      selectedQuadrant: autoStartingQuadrant
+    })
+    void sendRouletteSpinResult(payload, rouletteResultEndpointUrl)
   }, [
     accPct,
     accWinnings,
