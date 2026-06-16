@@ -14,6 +14,7 @@ interface RouletteWorkspaceProps {
   evolutionRebetVisible: boolean
   evolutionBettingOpen: boolean
   evolutionRecentNumbers: number[]
+  evolutionRecentHistory: number[]
   evolutionTableState: TableState | null
   evolutionLobbyHistories: LobbyTableHistory[]
   rouletteResultEndpointConfig: RouletteResultEndpointConfig
@@ -32,6 +33,7 @@ export function RouletteWorkspace({
   evolutionRebetVisible,
   evolutionBettingOpen,
   evolutionRecentNumbers,
+  evolutionRecentHistory,
   evolutionTableState,
   evolutionLobbyHistories,
   rouletteResultEndpointConfig,
@@ -123,7 +125,11 @@ export function RouletteWorkspace({
   }, [evolutionRecentNumbers])
 
   const storedRecentSpins = useMemo(
-    () => stats.results.slice(-12).reverse().map((result) => result.winningNumber),
+    () =>
+      stats.results
+        .slice(-12)
+        .reverse()
+        .map((result) => result.winningNumber),
     [stats.results]
   )
   const storedLatestSpin = stats.results[stats.results.length - 1] ?? null
@@ -144,7 +150,14 @@ export function RouletteWorkspace({
         evolutionTableState={evolutionTableState}
         rouletteResultEndpointUrl={rouletteResultEndpointUrl}
       />
-      <Analytics lobbyHistories={evolutionLobbyHistories} onReset={handleReset} results={stats.results} />
+      <Analytics
+        lobbyHistories={evolutionLobbyHistories}
+        evolutionRecentNumbers={evolutionRecentNumbers}
+        evolutionRecentHistory={evolutionRecentHistory}
+        onReset={handleReset}
+        results={stats.results}
+        latestSpin={latestSpin}
+      />
       <div className='mt-4 flex items-start gap-4'>
         {relaySettingsVisible ? (
           <div className='flex-1 space-y-3'>

@@ -44,7 +44,7 @@ export interface KimAlgoStep {
   landedNumber: number
   bet: KimAlgoBetPlan
   hit: boolean
-  hitType: 'quadrant' | 'spread' | 'zero' | 'miss'
+  hitType: 'quadrant' | 'spread' | 'zero' | 'repeat' | 'miss'
   sessionOutcome: 'continue' | 'reset_after_win' | 'reset_after_max_loss'
   selection: KimAlgoSelection
   nextRound: KimAlgoRound
@@ -568,6 +568,7 @@ export function simulateKimsAlgo(spins: readonly number[], options: Partial<KimA
 
   const steps = spins.map((landedNumber, index) => {
     assertValidSpinNumber(landedNumber)
+    const previousLandedNumber = index > 0 ? spins[index - 1] : null
 
     const bet = createKimAlgoBetPlan(activeRound, activeQuadrants, resolvedOptions.baseUnit, {
       allowOverlaps: resolvedOptions.allowOverlaps,
@@ -592,7 +593,8 @@ export function simulateKimsAlgo(spins: readonly number[], options: Partial<KimA
     )
 
     const hitZero = landedNumber === 0 && (actualPlaced ? actualPlaced.includes(0) : bet.zeroStake > 0)
-    const hit = hitQuadrant || hitZero
+    const hitRepeat = landedNumber !== 0 && activeRound > 1 && previousLandedNumber === landedNumber
+    const hit = hitQuadrant || hitZero || hitRepeat
     // Zero on rounds 1–3 (no zero hedge) is an immediate loss — don't escalate
     const zeroOnUnhedgedRound = landedNumber === 0 && bet.zeroStake === 0
     const isSessionReset = hit || activeRound === KIMS_ALGO_MAX_ROUNDS || zeroOnUnhedgedRound
@@ -633,7 +635,7 @@ export function simulateKimsAlgo(spins: readonly number[], options: Partial<KimA
       landedNumber,
       bet,
       hit,
-      hitType: hitOnQuadrant ? 'quadrant' : hitOnSpread ? 'spread' : hitZero ? 'zero' : 'miss',
+      hitType: hitOnQuadrant ? 'quadrant' : hitOnSpread ? 'spread' : hitZero ? 'zero' : hitRepeat ? 'repeat' : 'miss',
       sessionOutcome,
       selection,
       nextRound,

@@ -367,7 +367,7 @@ export function RouletteVirtualBoard({
         sessionStake += prevStep.bet.totalStake
       }
 
-      const grossReturn = placedForStep.includes(latestStep.landedNumber) ? getKimAlgoGrossReturn(latestStep.bet, latestStep.landedNumber) : 0
+      const grossReturn = latestStep.hit ? getKimAlgoGrossReturn(latestStep.bet, latestStep.landedNumber) : 0
       const payload = buildRouletteSpinResultPayload({
         step: latestStep,
         sessionStake,
@@ -513,7 +513,7 @@ export function RouletteVirtualBoard({
     for (const step of newSteps) {
       const stepIdx = step.spinIndex - 1
       const placedForStep = placedNumbersPerTrackedStep[stepIdx] ?? []
-      const isWin = placedForStep.includes(step.landedNumber)
+      const isWin = step.hit
       let sessionStake = step.bet.totalStake
       for (let i = stepIdx - 1; i >= 0; i--) {
         const prevStep = simulation.steps[i]
@@ -906,7 +906,7 @@ export function RouletteVirtualBoard({
                     nums.forEach((n) => seenDisplay.add(n))
                     if (displayNums.length === 0) return null
                     const step = simulation.steps[idx]
-                    const isWin = step != null && placedNumbersPerTrackedStep[idx]?.includes(step.landedNumber)
+                    const isWin = step != null && step.hit
                     return (
                       <Fragment key={idx}>
                         {idx > 0 && <span className='shrink-0 text-slate-400 text-[0.55rem] font-thin'>│</span>}

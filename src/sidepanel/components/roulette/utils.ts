@@ -1,4 +1,5 @@
 import { KimQuadrantId } from '@/src/lib/roulette'
+import { RouletteSpinResult } from '@/src/types/roulette'
 
 export function fmtAmt(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(2)
@@ -57,4 +58,13 @@ export function getPlacementMap(values: readonly number[]): Map<number, number> 
 export function getEffectiveStakeMultiplier(unitStake: number, baseUnit: number, placementCount: number): number {
   const roundMultiplier = baseUnit > 0 ? Math.max(1, Math.round(unitStake / baseUnit)) : 1
   return roundMultiplier * placementCount
+}
+
+export function getTableName(spin: RouletteSpinResult | null): string {
+  if (!spin) return 'Table Name'
+  if (spin.source === 'evolution') {
+    // Prefer the DOM-scraped display name; fall back to the API description field.
+    return spin.tableName || spin.description || 'Evolution Roulette'
+  }
+  return 'Roulette'
 }

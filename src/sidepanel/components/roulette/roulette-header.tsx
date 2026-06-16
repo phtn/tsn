@@ -20,7 +20,7 @@ function getTableName(spin: RouletteSpinResult | null): string {
     // Prefer the DOM-scraped display name; fall back to the API description field.
     return spin.tableName || spin.description || 'Evolution Roulette'
   }
-  return 'Speed Roulette'
+  return 'Roulette'
 }
 
 export const RouletteHeader = ({ stats, latestSpin, previewSpins }: RouletteHeaderProps) => {

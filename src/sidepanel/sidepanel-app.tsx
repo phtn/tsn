@@ -82,6 +82,7 @@ const App = () => {
   const [evolutionRebetVisible, setEvolutionRebetVisible] = useState<boolean>(false)
   const [evolutionBettingOpen, setEvolutionBettingOpen] = useState<boolean>(false)
   const [evolutionRecentNumbers, setEvolutionRecentNumbers] = useState<number[]>([])
+  const [evolutionRecentHistory, setEvolutionRecentHistory] = useState<number[]>([])
   const [evolutionTableState, setEvolutionTableState] = useState<TableState | null>(null)
   const [evolutionLobbyHistories, setEvolutionLobbyHistories] = useState<LobbyTableHistory[]>([])
   const [evolutionLobbyHistoriesCapture, setEvolutionLobbyHistoriesCapture] =
@@ -156,6 +157,7 @@ const App = () => {
         'evolutionRebetVisible',
         'evolutionBettingOpen',
         'evolutionRecentNumbers',
+        'evolutionRecentHistory',
         'evolutionTableState',
         'evolutionLobbyHistories',
         'evolutionLobbyHistoriesCapture'
@@ -167,7 +169,12 @@ const App = () => {
         const recentNumbers = Array.isArray(data.evolutionRecentNumbers)
           ? data.evolutionRecentNumbers.filter(
               (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 36
-            )
+            ).slice(0, 500)
+          : []
+        const recentHistory = Array.isArray(data.evolutionRecentHistory)
+          ? data.evolutionRecentHistory.filter(
+              (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 36
+            ).slice(0, 500)
           : []
         const lobbyHistories = Array.isArray(data.evolutionLobbyHistories)
           ? (data.evolutionLobbyHistories as unknown[]).filter(
@@ -188,6 +195,7 @@ const App = () => {
           setEvolutionRebetVisible(data.evolutionRebetVisible === true)
           setEvolutionBettingOpen(data.evolutionBettingOpen === true)
           setEvolutionRecentNumbers(recentNumbers as number[])
+          setEvolutionRecentHistory(recentHistory as number[])
           setEvolutionTableState(
             typeof data.evolutionTableState === 'string' ? (data.evolutionTableState as TableState) : null
           )
@@ -398,6 +406,7 @@ const App = () => {
         changes.evolutionRebetVisible ||
         changes.evolutionBettingOpen ||
         changes.evolutionRecentNumbers ||
+        changes.evolutionRecentHistory ||
         changes.evolutionTableState ||
         changes.evolutionLobbyHistories ||
         changes.evolutionLobbyHistoriesCapture
@@ -572,6 +581,7 @@ const App = () => {
             evolutionRebetVisible={evolutionRebetVisible}
             evolutionBettingOpen={evolutionBettingOpen}
             evolutionRecentNumbers={evolutionRecentNumbers}
+            evolutionRecentHistory={evolutionRecentHistory}
             evolutionTableState={evolutionTableState}
             evolutionLobbyHistories={evolutionLobbyHistories}
             rouletteResultEndpointConfig={rouletteResultEndpointConfig}

@@ -1,6 +1,6 @@
 import { applyPaperBankrollToRound } from '../lib/paper-bankroll'
-import type { RouletteLobbyHistoriesCapture } from '../lib/rouletteLobbyHistories'
 import { resolveFinancialOutcome } from '../lib/result-outcome'
+import type { RouletteLobbyHistoriesCapture } from '../lib/rouletteLobbyHistories'
 import { extractTennisEvents, hasTennisSurface } from '../lib/tennis/scrape'
 import {
   normalizeStoredData,
@@ -11,10 +11,10 @@ import {
 } from '../types'
 import type { Bet88, Bet88Dice, Bet88Keno, Bet88Limbo, Bet88Mines } from '../types/bet88'
 import {
-  type LobbyTableHistory,
   normalizeRouletteStoredData,
   summarizeRouletteResults,
   type EvoMessage,
+  type LobbyTableHistory,
   type PragmaticPlayMessage,
   type RouletteSpinResult
 } from '../types/roulette'
@@ -278,7 +278,10 @@ function isBet88Base(value: unknown): value is Bet88<unknown> {
     (typeof value.win === 'boolean' || typeof value.win === 'number') &&
     (typeof value.active === 'boolean' || typeof value.active === 'number') &&
     (value.multiplier === null || value.multiplier === undefined || typeof value.multiplier === 'number') &&
-    (value.winAmount === null || value.winAmount === undefined || typeof value.winAmount === 'string' || typeof value.winAmount === 'number')
+    (value.winAmount === null ||
+      value.winAmount === undefined ||
+      typeof value.winAmount === 'string' ||
+      typeof value.winAmount === 'number')
   )
 }
 
@@ -820,10 +823,7 @@ function parseBet88Result(payload: InterceptedNetworkPayload): GameResult | null
   const requestBody = isRecord(payload.requestBody) ? payload.requestBody : null
   const payout = toNumber(providerData.winAmount)
   const amount = toNumber(requestBody?.amount)
-  const profit =
-    payout !== undefined && amount !== undefined
-      ? payout - amount
-      : toNumber(providerData.profit)
+  const profit = payout !== undefined && amount !== undefined ? payout - amount : toNumber(providerData.profit)
   const win = typeof providerData.win === 'boolean' ? providerData.win : providerData.win !== 0
   const result = resolveFinancialOutcome({
     amount,
@@ -1127,9 +1127,12 @@ async function saveLobbyHistories(
   lastLobbyHistoriesSignature = nextSignature
 
   return new Promise((resolve) => {
-    chrome.storage.local.set({ evolutionLobbyHistories: capture.histories, evolutionLobbyHistoriesCapture: capture }, () => {
-      resolve()
-    })
+    chrome.storage.local.set(
+      { evolutionLobbyHistories: capture.histories, evolutionLobbyHistoriesCapture: capture },
+      () => {
+        resolve()
+      }
+    )
   })
 }
 
@@ -1403,9 +1406,7 @@ function reportCoordsToBackground(requestId: string, x: number, y: number, selec
   // sendMessage in that state throws "Extension context invalidated" and the
   // background never receives coords, so all trusted clicks time out.
   if (!chrome.runtime?.id) {
-    console.warn(
-      '[watchful-wind] Extension context invalidated — reload the page to restore click automation.'
-    )
+    console.warn('[watchful-wind] Extension context invalidated — reload the page to restore click automation.')
     return
   }
   try {
@@ -1427,10 +1428,7 @@ function sendCoordsUp(requestId: string, x: number, y: number, selector: string)
     reportCoordsToBackground(requestId, x, y, selector)
     return
   }
-  window.parent.postMessage(
-    { type: 'EVO_TRANSLATE_COORDS', requestId, selector, local: { x, y } },
-    '*'
-  )
+  window.parent.postMessage({ type: 'EVO_TRANSLATE_COORDS', requestId, selector, local: { x, y } }, '*')
 }
 
 function findIframeForSource(source: MessageEventSource | null): HTMLIFrameElement | null {
@@ -1505,7 +1503,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       '[data-role="chip"][aria-selected="true"]',
       '[data-role="chip"][data-active="true"]',
       '[data-role="chip"][data-selected="true"]',
-      '[data-role="chip"][data-current="true"]',
+      '[data-role="chip"][data-current="true"]'
     ]
     let value: number | null = null
     for (const sel of ACTIVE_CHIP_SELECTORS) {
@@ -1607,6 +1605,37 @@ function scrapeEvolutionChipValues(): number[] {
   return values
 }
 
+function deepQueryAll(root: ParentNode, selector: string): HTMLElement[] {
+  const matches = Array.from(root.querySelectorAll<HTMLElement>(selector))
+  const hosts = root.querySelectorAll('*')
+
+  for (const host of hosts) {
+    if (host.shadowRoot) {
+      matches.push(...deepQueryAll(host.shadowRoot, selector))
+    }
+  }
+
+  return matches
+}
+
+function extractRouletteNumbersFromText(text: string): number[] {
+  const values: number[] = []
+  const matches = text.match(/\b\d{1,2}\b/g)
+
+  if (!matches) {
+    return values
+  }
+
+  for (const raw of matches) {
+    const parsed = Number(raw)
+    if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 36) {
+      values.push(parsed)
+    }
+  }
+
+  return values
+}
+
 function syncEvolutionChips(): void {
   const values = scrapeEvolutionChipValues()
   if (values.length === 0) {
@@ -1623,29 +1652,46 @@ function syncEvolutionChips(): void {
   chrome.storage.local.set({ evolutionChips: values })
 }
 
-function scrapeRecentNumbers(): number[] {
-  const containers = document.querySelectorAll<HTMLElement>('[data-role="recent-number"]')
-  const numbers: number[] = []
+function scrapeRecentNumbers(): { recent: number[]; history: number[] } {
+  const drawer = deepQuery(document, '[data-role="statistic-drawer"]')
+  const scope: ParentNode = drawer ?? document
+  const statisticsContainers = deepQueryAll(scope, '[data-role="statistics"]')
+  const recentNumberContainers = deepQueryAll(scope, '[data-role="recent-number"], [data-role^="recent-number-"]')
+  const recent: number[] = []
+  const historyNumbers: number[] = []
 
-  for (const container of containers) {
-    const span = container.querySelector<HTMLElement>('span.value--dd5c7')
-    const raw = span?.textContent?.trim()
+  for (const container of statisticsContainers) {
+    const raw = container.textContent?.trim()
     if (!raw) continue
-    const parsed = Number(raw)
-    if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 36) {
-      numbers.push(parsed)
+
+    historyNumbers.push(...extractRouletteNumbersFromText(raw))
+  }
+
+  for (const container of recentNumberContainers.slice(0, 12)) {
+    const raw = container.textContent?.trim()
+    if (!raw) continue
+
+    const [value] = extractRouletteNumbersFromText(raw)
+    if (typeof value === 'number') {
+      recent.push(value)
     }
   }
 
-  return numbers
+  return {
+    recent: recent,
+    history: historyNumbers.slice(0, 500)
+  }
 }
 
 function syncRecentNumbers(): void {
-  const numbers = scrapeRecentNumbers()
-  const signature = numbers.join(',')
+  const { recent, history } = scrapeRecentNumbers()
+  const signature = `${recent.join(',')}::${history.join(',')}`
   if (signature === lastRecentNumbersSignature) return
   lastRecentNumbersSignature = signature
-  chrome.storage.local.set({ evolutionRecentNumbers: numbers })
+  chrome.storage.local.set({
+    evolutionRecentNumbers: recent,
+    evolutionRecentHistory: history
+  })
 }
 
 function initEvolutionChipCapture(): void {
@@ -1669,12 +1715,16 @@ function initEvolutionChipCapture(): void {
     attributeFilter: ['style', 'class', 'disabled', 'hidden']
   })
 
-  window.addEventListener('load', () => {
-    syncEvolutionChips()
-    syncRebetVisible()
-    syncBettingOpen()
-    syncRecentNumbers()
-  }, { once: true })
+  window.addEventListener(
+    'load',
+    () => {
+      syncEvolutionChips()
+      syncRebetVisible()
+      syncBettingOpen()
+      syncRecentNumbers()
+    },
+    { once: true }
+  )
   syncEvolutionChips()
   syncRebetVisible()
   syncBettingOpen()

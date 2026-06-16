@@ -1,21 +1,160 @@
 import type { LobbyTableHistory, RouletteSpinResult } from '@/src/types/roulette'
 import { FC, type ReactNode, useMemo } from 'react'
-import { BLACK_NUMBERS, ORPHELINS_G, RED_NUMBERS, TIER_G, VOISINS_G } from '../../../lib/roulette'
+import {
+  BLACK_NUMBERS,
+  KIMS_ALGO_QUADRANTS,
+  ORPHELINS_G,
+  RED_NUMBERS,
+  TIER_G,
+  VOISINS_G,
+  getKimQuadrantsContainingPair,
+  resolveKimQuadrantPreference
+} from '../../../lib/roulette'
 import { cn } from '../../../lib/utils'
 import { ClassName } from '../../../types'
 import { tmap } from './tables'
+import { Stats } from './types'
 
 export const cardClassName: ClassName = `border-zinc-800 bg-[linear-gradient(180deg,rgba(255,255,255,0.01),rgba(255,255,255,0)),linear-gradient(180deg,rgba(31,35,41,0.96),rgba(12,14,19,0.9))]`
 
 type AnalyticsProps = {
   // winningNumbers?: readonly number[]
   lobbyHistories?: LobbyTableHistory[]
+  evolutionRecentNumbers?: number[]
+  evolutionRecentHistory?: number[]
   onReset?: () => void
   results: RouletteSpinResult[]
+  latestSpin: RouletteSpinResult
 }
 
-export const Analytics: FC<AnalyticsProps> = ({ results, lobbyHistories = [], onReset }) => {
-  const winningNumbers = results.map((result) => result.winningNumber).flat().reverse()
+interface SignalSummary {
+  signalsFound: number
+  wins: number
+  losses: number
+  zeroLosses: number
+  bestWinStreak: number
+  currentWinStreak: number
+  winStreaks: number[]
+  series: SignalOutcome[]
+}
+
+type SignalOutcome = 'W' | 'L' | '0'
+
+function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalSummary {
+  let signalsFound = 0
+  let wins = 0
+  let losses = 0
+  let zeroLosses = 0
+  let currentWinStreak = 0
+  let bestWinStreak = 0
+  const winStreaks: number[] = []
+  const series: SignalOutcome[] = []
+
+  let index = 1
+  while (index < allNumbersFromStart.length) {
+    const first = allNumbersFromStart[index - 1]
+    const second = allNumbersFromStart[index]
+    const candidateQuadrants = getKimQuadrantsContainingPair(first, second)
+
+    if (candidateQuadrants.length === 0) {
+      index += 1
+      continue
+    }
+
+    signalsFound += 1
+    const selectedQuadrant = resolveKimQuadrantPreference(candidateQuadrants, [])
+
+    let resolvedAt: number | null = null
+    let previousRoundNumber: number | null = null
+
+    for (let round = 1; round <= 5; round++) {
+      const spinIndex = index + round
+      if (spinIndex >= allNumbersFromStart.length) {
+        index = allNumbersFromStart.length
+        break
+      }
+
+      const landedNumber = allNumbersFromStart[spinIndex]
+      const isZero = landedNumber === 0
+      const isZeroLoss = isZero && round <= 3
+      const isZeroWin = isZero && round >= 4
+      const isRepeatWin = round > 1 && previousRoundNumber !== null && landedNumber === previousRoundNumber
+      const isQuadrantWin = selectedQuadrant ? KIMS_ALGO_QUADRANTS[selectedQuadrant].includes(landedNumber) : false
+      const isWin = isQuadrantWin || isZeroWin || isRepeatWin
+
+      if (isZeroLoss) {
+        zeroLosses += 1
+        losses += 1
+        series.push('0')
+        if (currentWinStreak > 0) {
+          winStreaks.push(currentWinStreak)
+        }
+        currentWinStreak = 0
+        resolvedAt = spinIndex
+        break
+      }
+
+      if (isWin) {
+        wins += 1
+        currentWinStreak += 1
+        bestWinStreak = Math.max(bestWinStreak, currentWinStreak)
+        series.push('W')
+        resolvedAt = spinIndex
+        break
+      }
+
+      previousRoundNumber = landedNumber
+
+      if (round === 5) {
+        losses += 1
+        series.push('L')
+        if (currentWinStreak > 0) {
+          winStreaks.push(currentWinStreak)
+        }
+        currentWinStreak = 0
+        resolvedAt = spinIndex
+      }
+    }
+
+    if (resolvedAt === null) {
+      break
+    }
+
+    index = resolvedAt + 1
+  }
+
+  if (currentWinStreak > 0) {
+    winStreaks.push(currentWinStreak)
+  }
+
+  return {
+    signalsFound,
+    wins,
+    losses,
+    zeroLosses,
+    bestWinStreak,
+    currentWinStreak,
+    winStreaks,
+    series: series.reverse()
+  }
+}
+
+export const Analytics: FC<AnalyticsProps> = ({
+  results,
+  lobbyHistories = [],
+  evolutionRecentNumbers = [],
+  evolutionRecentHistory = [],
+  onReset,
+  latestSpin
+}) => {
+  const winningNumbers = results
+    .map((result) => result.winningNumber)
+    .flat()
+    .reverse()
+  const recentNumbers = evolutionRecentNumbers.slice(0, 500)
+  const historyNumbers = evolutionRecentHistory.slice(0, 500)
+  const allNumbersFromStart = recentNumbers.concat(historyNumbers).reverse()
+  const signalSummary = useMemo(() => mapAllNumbersFromStart(allNumbersFromStart), [allNumbersFromStart])
   const stats = useMemo(() => {
     const total = winningNumbers.length
     if (total === 0) {
@@ -125,129 +264,30 @@ export const Analytics: FC<AnalyticsProps> = ({ results, lobbyHistories = [], on
       hotNumbers,
       coldNumbers,
       numberCounts
-    }
+    } as Stats
   }, [winningNumbers])
 
   return (
     <div className='space-y-2 text-white p-1'>
       <div className='mx-auto space-y-1.5'>
         {/* Hot & Cold Numbers */}
-        <div className={cn('grid grid-cols-2 gap-1 px-1 py-2 bg-neutral-950')}>
-          <div className={cn('')}>
-            <div className='flex flex-wrap gap-1.5'>
-              <div className='p-0.5 h-4'>
-                <span className='font-bold text-orange-300 text-xs uppercase'>H</span>
-              </div>
-              {stats.hotNumbers.length > 0 ? (
-                stats.hotNumbers.map(([num, count]) => (
-                  <NumberBadge key={num} number={num} count={count} isHot={true} />
-                ))
-              ) : (
-                <p className='text-neutral-500 text-sm'>Awaiting data...</p>
-              )}
-            </div>
-          </div>
-
-          <div className={cn('')}>
-            <div className='flex flex-wrap gap-1.5 justify-end'>
-              <div className='p-0.5 h-4'>
-                <span className='font-bold text-cyan-400 text-xs uppercase'>C</span>
-              </div>
-              {stats.coldNumbers.length > 0 ? (
-                stats.coldNumbers.map(([num, count]) => (
-                  <NumberBadge key={num} number={num} count={count} isHot={false} />
-                ))
-              ) : (
-                <p className='text-neutral-500 text-sm'>No data yet</p>
-              )}
-            </div>
-          </div>
-        </div>
+        <HotAndColdNumbers hotNumbers={stats.hotNumbers} coldNumbers={stats.coldNumbers} />
 
         {/* Lobby History — one row per table */}
-        {lobbyHistories.length > 0 && (
-          <div className={cn('rounded-sm p-3 space-y-1 bg-neutral-900')}>
-            {lobbyHistories.map(({ tableId, numbers }) => (
-              <div key={tableId} className='flex items-center gap-3'>
-                <span className='text-xs uppercase text-neutral-200 min-w-48 shrink-0 truncate' title={tableId}>
-                  {
-                    tmap[
-                      `${tableId
-                        .replace(/0+$/, '')
-                        .replace(/^[A-Z][a-z]+/, '')
-                        .toLowerCase()}` as keyof typeof tmap
-                    ]
-                  }
-                </span>
-                <div className='flex gap-0.5 bg-white/40 p-0.5 rounded-xs'>
-                  {numbers.slice(0, 10).map((n, i) => (
-                    <LobbyNumber key={i} number={n} />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+        {/*{lobbyHistories.length > 0 && <LobbyHistories data={lobbyHistories} />}*/}
+        {recentNumbers.length > 0 && <MostRecentNumbers numbers={recentNumbers} />}
+        {historyNumbers.length > 0 && <HistoryNumbers numbers={historyNumbers} />}
+        {allNumbersFromStart.length > 0 && (
+          <SignalOverview label={`Analysis`} total={allNumbersFromStart.length} summary={signalSummary} />
         )}
         {/* Recent Numbers Strip */}
-        <div className='grid grid-cols-10 gap-1'>
-          <VPctBar
-            label='ZERO'
-            percentage={stats.zero.pct}
-            color='bg-linear-to-b from-emerald-500 to-emerald-600'
-            count={stats.zero.count}
-          />
-          <VPctBar
-            label='1 - 12'
-            percentage={stats.dozens[0].pct}
-            color='bg-linear-to-b from-cyan-300/50 to-cyan-500'
-            count={stats.dozens[0].count}
-            cols='col-span-3'
-          />
-          <VPctBar
-            label='13 - 24'
-            percentage={stats.dozens[1].pct}
-            color='bg-linear-to-b from-sky-300/50 to-sky-500'
-            count={stats.dozens[1].count}
-            cols='col-span-3'
-          />
-          <VPctBar
-            label='25 - 36'
-            percentage={stats.dozens[2].pct}
-            color='bg-linear-to-b from-blue-300/50 to-blue-500'
-            count={stats.dozens[2].count}
-            cols='col-span-3'
-          />
-        </div>
+        <VPctOverview stats={stats} />
 
         {/* Stats Overview */}
-        <div className='grid grid-cols-4 gap-1'>
-          <StatCard
-            title='EVEN'
-            value={`${stats.oddEven.even.pct.toFixed(1)}%`}
-            subtitle={`${stats.oddEven.even.count}`}
-            color='neutral'
-          />
-          <StatCard
-            title='RED'
-            value={`${stats.colors.red.pct.toFixed(1)}%`}
-            subtitle={`${stats.colors.red.count}`}
-            color='rose'
-          />
-          <StatCard
-            title='BLACK'
-            value={`${stats.colors.black.pct.toFixed(1)}%`}
-            subtitle={`${stats.colors.black.count}`}
-            color='neutral'
-          />
-          <StatCard
-            title='ODD'
-            value={`${stats.oddEven.odd.pct.toFixed(1)}%`}
-            subtitle={`${stats.oddEven.odd.count}`}
-            color='neutral'
-          />
-        </div>
+        <StatsOverview stats={stats} />
 
-        <div className={cn('rounded-lg px-4 pb-3 bg-neutral-700')}>
+        {/* Streets Overview */}
+        {/*<div className={cn('rounded-lg px-4 pb-3 bg-neutral-700')}>
           <h2 className='font-okx font-semibold text-white uppercase py-2'>Streets</h2>
           <div className='grid grid-cols-12 gap-1.5'>
             {stats.streets.map((street, idx) => {
@@ -273,9 +313,7 @@ export const Analytics: FC<AnalyticsProps> = ({ results, lobbyHistories = [], on
             })}
           </div>
         </div>
-
-        {/*<Racetrack results={results} />*/}
-
+*/}
         {/* RESET */}
         <div className={cn('rounded-lg border border-white/8 p-4', cardClassName)}>
           <div className='flex items-end justify-between gap-4'>
@@ -303,6 +341,108 @@ export const Analytics: FC<AnalyticsProps> = ({ results, lobbyHistories = [], on
           <p className='text-neutral-500 text-xs'>re-up.ph • v3.69</p>
         </div>
       </div>
+    </div>
+  )
+}
+
+interface LobbyHistoriesProps {
+  data: { tableId: string; numbers: number[] }[]
+}
+
+const LobbyHistories = ({ data }: LobbyHistoriesProps) => (
+  <div className={cn('rounded-sm p-3 space-y-1 bg-neutral-900')}>
+    {data.map(({ tableId, numbers }) => (
+      <div key={tableId} className='flex items-center gap-3'>
+        <span className='text-xs uppercase text-neutral-200 min-w-48 shrink-0 truncate' title={tableId}>
+          {
+            tmap[
+              `${tableId
+                .replace(/0+$/, '')
+                .replace(/^[A-Z][a-z]+/, '')
+                .toLowerCase()}` as keyof typeof tmap
+            ]
+          }
+        </span>
+        <div className='flex gap-0.5 bg-white/40 p-0.5 rounded-xs'>
+          {numbers.slice(0, 10).map((n, i) => (
+            <LobbyNumber key={i} number={n} />
+          ))}
+        </div>
+      </div>
+    ))}
+  </div>
+)
+
+const MostRecentNumbers = ({ numbers }: { numbers: number[] }) => (
+  <div className={cn('rounded-sm p-3 space-y-2 bg-neutral-900')}>
+    <div className='flex items-end justify-between gap-3'>
+      <div>
+        <h2 className='font-okx text-sm font-semibold uppercase text-white'>Most Recent</h2>
+      </div>
+      <p className='text-xs font-okx text-neutral-400'>{numbers.length} captured</p>
+    </div>
+    <div className='flex max-h-64 flex-wrap gap-1 overflow-y-auto pr-1'>
+      {numbers.map((number, index) => (
+        <LobbyNumber key={`${number}-${index}`} number={number} />
+      ))}
+    </div>
+  </div>
+)
+
+const HistoryNumbers = ({ numbers }: { numbers: number[] }) => (
+  <div className={cn('rounded-sm p-3 space-y-2 bg-neutral-900')}>
+    <div className='flex items-end justify-between gap-3'>
+      <div>
+        <h2 className='font-okx text-sm font-semibold uppercase text-white'>History</h2>
+      </div>
+      <p className='text-xs font-okx text-neutral-400'>{numbers.length} captured</p>
+    </div>
+    <div className='flex max-h-64 flex-wrap gap-1 overflow-y-auto pr-1'>
+      {numbers.map((number, index) => (
+        <LobbyNumber key={`${number}-${index}`} number={number} />
+      ))}
+    </div>
+  </div>
+)
+
+interface SignalOverviewProps {
+  label: string
+  total: number
+  summary: SignalSummary
+}
+
+const SignalOverview = ({ label, total, summary }: SignalOverviewProps) => {
+  return (
+    <div className={cn('rounded-sm p-3 space-y-2 bg-neutral-900')}>
+      <div className='flex items-end justify-between gap-3'>
+        <div>
+          <h2 className='font-okx text-sm font-semibold uppercase text-white'>{label}</h2>
+        </div>
+        <p className='text-xs font-okx text-neutral-400'>{total} captured</p>
+      </div>
+      <div className='grid grid-cols-4 gap-1 text-xs'>
+        <StatCard title='Signals' value={summary.signalsFound} color='neutral' />
+        <StatCard title='Wins' value={summary.wins} color='emerald' />
+        <StatCard title='Losses' value={summary.losses} color='rose' />
+        <StatCard title='Best Streak' value={summary.bestWinStreak} color='neutral' />
+      </div>
+      <div className='flex flex-wrap gap-1'>
+        {summary.series.slice(0, 40).map((outcome, index) => (
+          <span
+            key={`${outcome}-${index}`}
+            className={cn(
+              'inline-flex h-5 min-w-5 items-center justify-center rounded-xs px-1 text-[10px] font-okx font-semibold',
+              outcome === 'W'
+                ? 'bg-amber-300/20 text-amber-200'
+                : outcome === '0'
+                  ? 'bg-emerald-300/20 text-emerald-200'
+                  : 'bg-zinc-300/20 text-zinc-200'
+            )}>
+            {outcome}
+          </span>
+        ))}
+      </div>
+      <p className='text-[11px] font-okx text-neutral-400'>Zero losses: {summary.zeroLosses}</p>
     </div>
   )
 }
@@ -345,6 +485,70 @@ const StatCard: FC<StatCardProps> = ({ title, value, trend, color = 'emerald' })
   </div>
 )
 
+const StatsOverview = ({ stats }: { stats: Stats }) => (
+  <div className='grid grid-cols-4 gap-1'>
+    <StatCard
+      title='EVEN'
+      value={`${stats.oddEven.even.pct.toFixed(1)}%`}
+      subtitle={`${stats.oddEven.even.count}`}
+      color='neutral'
+    />
+    <StatCard
+      title='RED'
+      value={`${stats.colors.red.pct.toFixed(1)}%`}
+      subtitle={`${stats.colors.red.count}`}
+      color='rose'
+    />
+    <StatCard
+      title='BLACK'
+      value={`${stats.colors.black.pct.toFixed(1)}%`}
+      subtitle={`${stats.colors.black.count}`}
+      color='neutral'
+    />
+    <StatCard
+      title='ODD'
+      value={`${stats.oddEven.odd.pct.toFixed(1)}%`}
+      subtitle={`${stats.oddEven.odd.count}`}
+      color='neutral'
+    />
+  </div>
+)
+
+interface HotAndColdNumbersProps {
+  hotNumbers: [number, number][]
+  coldNumbers: [number, number][]
+}
+
+const HotAndColdNumbers = ({ hotNumbers, coldNumbers }: HotAndColdNumbersProps) => (
+  <div className={cn('grid grid-cols-2 gap-1 px-1 py-2 bg-neutral-950')}>
+    <div className={cn('')}>
+      <div className='flex flex-wrap gap-1.5'>
+        <div className='p-0.5 h-4'>
+          <span className='font-bold text-orange-300 text-xs uppercase'>H</span>
+        </div>
+        {hotNumbers.length > 0 ? (
+          hotNumbers.map(([num, count]) => <NumberBadge key={num} number={num} count={count} isHot={true} />)
+        ) : (
+          <p className='text-neutral-500 text-sm'>Awaiting data...</p>
+        )}
+      </div>
+    </div>
+
+    <div className={cn('')}>
+      <div className='flex flex-wrap gap-1.5 justify-end'>
+        <div className='p-0.5 h-4'>
+          <span className='font-bold text-cyan-400 text-xs uppercase'>C</span>
+        </div>
+        {coldNumbers.length > 0 ? (
+          coldNumbers.map(([num, count]) => <NumberBadge key={num} number={num} count={count} isHot={false} />)
+        ) : (
+          <p className='text-neutral-500 text-sm'>No data yet</p>
+        )}
+      </div>
+    </div>
+  </div>
+)
+
 interface PercentageBarProps {
   label: string
   percentage: number
@@ -369,12 +573,13 @@ const PercentageBar: FC<PercentageBarProps> = ({ label, percentage, color, count
     </div>
   </div>
 )
+
 const VPctBar: FC<PercentageBarProps & { cols?: string }> = ({ label, percentage, color, count, cols }) => (
   <div className={cn('group', cols)}>
-    <div className={cn('relative h-16 bg-neutral-700 rounded-t-sm overflow-hidden flex items-end')}>
+    <div className={cn('relative h-10 bg-neutral-700 rounded-t-sm overflow-hidden flex items-end')}>
       <div
         className={`w-full ${color} rounded-xs rounded-b-none transition-all duration-700 ease-out group-hover:shadow-lg`}
-        style={{ height: `${Math.min(percentage, 100) + 0.33}%` }}
+        style={{ height: `${Math.min(percentage, 100) + 0.66}%` }}
       />
 
       <span className='absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 text-sm font-semibold text-neutral-200'>
@@ -385,6 +590,39 @@ const VPctBar: FC<PercentageBarProps & { cols?: string }> = ({ label, percentage
       <span className='text-xs text-neutral-300'>{label}</span>
       <span className='text-xs text-neutral-500'>{count}</span>
     </div>
+  </div>
+)
+
+const VPctOverview = ({ stats }: { stats: Stats }) => (
+  <div className='grid grid-cols-11 gap-1'>
+    <VPctBar
+      label='ZERO'
+      percentage={stats.zero.pct}
+      color='bg-linear-to-b from-emerald-500 to-emerald-600'
+      count={stats.zero.count}
+      cols='col-span-2'
+    />
+    <VPctBar
+      label='1 - 12'
+      percentage={stats.dozens[0].pct}
+      color='bg-linear-to-b from-cyan-300/50 to-cyan-500'
+      count={stats.dozens[0].count}
+      cols='col-span-3'
+    />
+    <VPctBar
+      label='13 - 24'
+      percentage={stats.dozens[1].pct}
+      color='bg-linear-to-b from-sky-300/50 to-sky-500'
+      count={stats.dozens[1].count}
+      cols='col-span-3'
+    />
+    <VPctBar
+      label='25 - 36'
+      percentage={stats.dozens[2].pct}
+      color='bg-linear-to-b from-blue-300/50 to-blue-500'
+      count={stats.dozens[2].count}
+      cols='col-span-3'
+    />
   </div>
 )
 
