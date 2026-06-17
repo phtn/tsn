@@ -2,18 +2,20 @@ import type { LobbyTableHistory, RouletteSpinResult } from '@/src/types/roulette
 import { FC, type ReactNode, useMemo } from 'react'
 import {
   BLACK_NUMBERS,
+  getKimQuadrantsContainingPair,
+  type KimQuadrantId,
   KIMS_ALGO_QUADRANTS,
   ORPHELINS_G,
   RED_NUMBERS,
+  resolveKimQuadrantPreference,
   TIER_G,
-  VOISINS_G,
-  getKimQuadrantsContainingPair,
-  resolveKimQuadrantPreference
+  VOISINS_G
 } from '../../../lib/roulette'
 import { cn } from '../../../lib/utils'
 import { ClassName } from '../../../types'
 import { tmap } from './tables'
 import { Stats } from './types'
+import { getHotNumbers } from './utils'
 
 export const cardClassName: ClassName = `border-zinc-800 bg-[linear-gradient(180deg,rgba(255,255,255,0.01),rgba(255,255,255,0)),linear-gradient(180deg,rgba(31,35,41,0.96),rgba(12,14,19,0.9))]`
 
@@ -49,6 +51,7 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
   let bestWinStreak = 0
   const winStreaks: number[] = []
   const series: SignalOutcome[] = []
+  let currentQuadrant: KimQuadrantId = 'q1'
 
   let index = 1
   while (index < allNumbersFromStart.length) {
@@ -62,10 +65,16 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
     }
 
     signalsFound += 1
-    const selectedQuadrant = resolveKimQuadrantPreference(candidateQuadrants, [])
+    const selectedQuadrant = resolveKimQuadrantPreference(
+      candidateQuadrants,
+      getHotNumbers(allNumbersFromStart.slice(0, index + 1)),
+      currentQuadrant
+    )
+    if (selectedQuadrant) {
+      currentQuadrant = selectedQuadrant
+    }
 
     let resolvedAt: number | null = null
-    let previousRoundNumber: number | null = null
 
     for (let round = 1; round <= 5; round++) {
       const spinIndex = index + round
@@ -78,7 +87,9 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
       const isZero = landedNumber === 0
       const isZeroLoss = isZero && round <= 3
       const isZeroWin = isZero && round >= 4
-      const isRepeatWin = round > 1 && previousRoundNumber !== null && landedNumber === previousRoundNumber
+      const previousSpinNumber = allNumbersFromStart[spinIndex - 1] ?? null
+      const isRepeatWin =
+        round > 1 && landedNumber !== 0 && previousSpinNumber !== null && landedNumber === previousSpinNumber
       const isQuadrantWin = selectedQuadrant ? KIMS_ALGO_QUADRANTS[selectedQuadrant].includes(landedNumber) : false
       const isWin = isQuadrantWin || isZeroWin || isRepeatWin
 
@@ -102,8 +113,6 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
         resolvedAt = spinIndex
         break
       }
-
-      previousRoundNumber = landedNumber
 
       if (round === 5) {
         losses += 1
@@ -422,8 +431,18 @@ const SignalOverview = ({ label, total, summary }: SignalOverviewProps) => {
       </div>
       <div className='grid grid-cols-4 gap-1 text-xs'>
         <StatCard title='Signals' value={summary.signalsFound} color='neutral' />
-        <StatCard title='Wins' value={summary.wins} color='emerald' />
-        <StatCard title='Losses' value={summary.losses} color='rose' />
+        <StatCard
+          title='Wins'
+          value={summary.wins}
+          color='emerald'
+          extra={<span>{((summary.wins / summary.signalsFound) * 100).toFixed(0)}%</span>}
+        />
+        <StatCard
+          title='Losses'
+          value={summary.losses}
+          color='rose'
+          extra={<span>{((summary.losses / summary.signalsFound) * 100).toFixed(0)}%</span>}
+        />
         <StatCard title='Best Streak' value={summary.bestWinStreak} color='neutral' />
       </div>
       <div className='flex flex-wrap gap-1'>
@@ -454,6 +473,7 @@ interface StatCardProps {
   icon?: ReactNode
   trend?: 'up' | 'down' | 'neutral'
   color?: 'emerald' | 'neutral' | 'rose'
+  extra?: ReactNode
 }
 
 const STAT_VALUE_CLASS_NAME: Record<NonNullable<StatCardProps['color']>, string> = {
@@ -462,11 +482,11 @@ const STAT_VALUE_CLASS_NAME: Record<NonNullable<StatCardProps['color']>, string>
   rose: 'bg-linear-to-r from-rose-400 to-rose-300 bg-clip-text text-transparent'
 }
 
-const StatCard: FC<StatCardProps> = ({ title, value, trend, color = 'emerald' }) => (
+const StatCard: FC<StatCardProps> = ({ title, value, trend, color = 'emerald', extra }) => (
   <div className={cn('rounded-sm p-2 bg-neutral-700')}>
     <div className='flex items-center justify-between'>
       <span className='text-xs font-ios text-neutral-400 uppercase tracking-wider'>{title}</span>
-      {/*{icon && <span className={`text-${color}-400`}>{icon}</span>}*/}
+      {extra}
     </div>
     <div className='flex items-end gap-0'>
       <span className={cn('text-xl font-medium', STAT_VALUE_CLASS_NAME[color])}>{value}</span>

@@ -1,13 +1,14 @@
 {
   "name": "watchful-wind",
-  "version": "1.0.0",
+  "version": "0.3.0",
   "description": "Watch game result tracker extension",
   "scripts": {
     "build": "node build.mjs",
     "dev": "node build.mjs --dev",
     "clean": "rm -rf dist",
     "roulette:kims": "bun run ./src/lib/roulette/kims-algo.demo.ts",
-    "roulette:kims:csv": "bun --silent ./src/lib/roulette/kims-algo.csv.ts"
+    "roulette:kims:csv": "bun --silent ./src/lib/roulette/kims-algo.csv.ts",
+    "postinstall": "node ./patch-tailwind-register-hooks.mjs"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
