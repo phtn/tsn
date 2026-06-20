@@ -1,5 +1,5 @@
 import { KimQuadrantId } from '@/src/lib/roulette'
-import { RouletteSpinResult } from '@/src/types/roulette'
+import { rtnMap } from './tables'
 
 export function fmtAmt(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(2)
@@ -60,11 +60,13 @@ export function getEffectiveStakeMultiplier(unitStake: number, baseUnit: number,
   return roundMultiplier * placementCount
 }
 
-export function getTableName(spin: RouletteSpinResult | null): string {
-  if (!spin) return 'Table Name'
-  if (spin.source === 'evolution') {
-    // Prefer the DOM-scraped display name; fall back to the API description field.
-    return spin.tableName || spin.description || 'Evolution Roulette'
-  }
-  return 'Roulette'
+export function getTableName(id: string | undefined, fallback = 'Roulette Table'): string {
+  if (!id) return fallback
+  const normalizedId = id
+    .trim()
+    .replace(/0+$/, '')
+    .replace(/^[A-Z][a-z]+/, '')
+    .toLowerCase()
+
+  return rtnMap[id] ?? rtnMap[normalizedId] ?? id ?? fallback
 }

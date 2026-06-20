@@ -140,7 +140,7 @@ export function RouletteWorkspace({
 
   return (
     <div className='space-y-0 pb-6 bg-[#1F2020]'>
-      <RouletteHeader stats={stats} latestSpin={latestSpin} previewSpins={previewSpins} />
+      <RouletteHeader tableId={latestSpin?.id} latestSpin={latestSpin} previewSpins={previewSpins} />
       <RouletteVirtualBoard
         status={status}
         winningNumbers={winningNumbers}

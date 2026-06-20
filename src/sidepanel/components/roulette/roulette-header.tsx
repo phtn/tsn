@@ -1,10 +1,12 @@
 import { Icon } from '@/src/lib/icons'
 import { getNumberTone } from '../../../lib/roulette/utils'
 import { cn } from '../../../lib/utils'
-import { RouletteSpinResult, RouletteStoredData } from '../../../types/roulette'
+import { RouletteSpinResult } from '../../../types/roulette'
+import { rtnMap } from './tables'
+import { getTableName } from './utils'
 
 interface RouletteHeaderProps {
-  stats: RouletteStoredData
+  tableId: string | undefined
   latestSpin: RouletteSpinResult | null
   previewSpins: number[] | readonly number[]
 }
@@ -14,18 +16,15 @@ function getProviderLabel(spin: RouletteSpinResult | null): string {
   return spin.source === 'evolution' ? 'Evolution' : 'Pragmatic Play'
 }
 
-function getTableName(spin: RouletteSpinResult | null): string {
-  if (!spin) return 'Table Name'
-  if (spin.source === 'evolution') {
-    // Prefer the DOM-scraped display name; fall back to the API description field.
-    return spin.tableName || spin.description || 'Evolution Roulette'
-  }
+function getTableNameFallback(spin: RouletteSpinResult | null): string {
+  if (!spin) return 'Roulette Table'
+  if (spin.source === 'evolution') return spin.tableName || spin.description || 'Evolution Roulette'
   return 'Roulette'
 }
 
-export const RouletteHeader = ({ stats, latestSpin, previewSpins }: RouletteHeaderProps) => {
+export const RouletteHeader = ({ tableId, latestSpin, previewSpins }: RouletteHeaderProps) => {
   const providerLabel = getProviderLabel(latestSpin)
-  const tableName = getTableName(latestSpin)
+  const tableName = getTableName(tableId, getTableNameFallback(latestSpin))
   const recents = latestSpin ? previewSpins.slice(0, 12) : previewSpins.slice(0, 10)
 
   return (
@@ -38,13 +37,13 @@ export const RouletteHeader = ({ stats, latestSpin, previewSpins }: RouletteHead
               <Icon name='evolution' className='size-4 opacity-40 rotate-180' />
               <p
                 id='provider'
-                className='font-display text-[7px] italic uppercase tracking-[0.2em] leading-none text-gray-200/80'>
+                className='font-display text-xs italic uppercase tracking-[0.2em] leading-none text-gray-200/80'>
                 {providerLabel}
               </p>
             </div>
 
             <h2 id='table-name' className='mt-px font-display font-medium text-sm leading-none text-white'>
-              {tableName}
+              {tableId} - {tableId ? rtnMap[tableId] : 'no id'}
             </h2>
           </div>
           <div
@@ -56,12 +55,12 @@ export const RouletteHeader = ({ stats, latestSpin, previewSpins }: RouletteHead
             </span>
           </div>
         </div>
-        <div className='mt-2 rounded-lg p-2 w-full'>
+        <div className='mt-2 rounded-lg w-full'>
           {/*<div className='flex items-end justify-between gap-3'>
             <p className='text-[0.62rem] uppercase tracking-[0.22em] text-slate-500'>Recent spins</p>
             <p className='text-xs text-slate-500'>{latestSpin ? latestSpin.description : 'Listening for spins'}</p>
           </div>*/}
-          <div className='flex flex-wrap gap-1.5 w-full'>
+          <div className='flex flex-wrap gap-1 w-full'>
             {recents.map((value, index) => (
               <div
                 key={`preview-spin-${value}-${index}`}

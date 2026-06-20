@@ -215,6 +215,12 @@ async function syncActiveTabStatus(): Promise<void> {
   await syncTabStatus(activeTab.id, activeTab)
 }
 
+function enableActionClickSidePanel(): void {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((error) => {
+    console.error('Failed to enable action-click side panel behavior:', error)
+  })
+}
+
 chrome.action.onClicked.addListener(async (clickedTab) => {
   if (!clickedTab.id) {
     return
@@ -240,10 +246,12 @@ chrome.action.onClicked.addListener(async (clickedTab) => {
 })
 
 chrome.runtime.onInstalled.addListener(() => {
+  enableActionClickSidePanel()
   void syncActiveTabStatus()
 })
 
 chrome.runtime.onStartup.addListener(() => {
+  enableActionClickSidePanel()
   void syncActiveTabStatus()
 })
 

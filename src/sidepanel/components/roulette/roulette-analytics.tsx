@@ -37,6 +37,10 @@ interface SignalSummary {
   bestWinStreak: number
   currentWinStreak: number
   winStreaks: number[]
+  signalIndexes: number[]
+  leadingSignalIndexes: number[]
+  winningIndexes: number[]
+  losingIndexes: number[]
   series: SignalOutcome[]
 }
 
@@ -50,6 +54,10 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
   let currentWinStreak = 0
   let bestWinStreak = 0
   const winStreaks: number[] = []
+  const signalIndexes: number[] = []
+  const leadingSignalIndexes: number[] = []
+  const winningIndexes: number[] = []
+  const losingIndexes: number[] = []
   const series: SignalOutcome[] = []
   let currentQuadrant: KimQuadrantId = 'q1'
 
@@ -65,6 +73,8 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
     }
 
     signalsFound += 1
+    signalIndexes.push(index - 1, index)
+    leadingSignalIndexes.push(index)
     const selectedQuadrant = resolveKimQuadrantPreference(
       candidateQuadrants,
       getHotNumbers(allNumbersFromStart.slice(0, index + 1)),
@@ -106,9 +116,18 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
       }
 
       if (isWin) {
+        const isWinningSignal =
+          previousSpinNumber !== null && getKimQuadrantsContainingPair(previousSpinNumber, landedNumber).length > 0
+
         wins += 1
+        if (isWinningSignal) {
+          signalsFound += 1
+          signalIndexes.push(spinIndex - 1, spinIndex)
+          leadingSignalIndexes.push(spinIndex)
+        }
         currentWinStreak += 1
         bestWinStreak = Math.max(bestWinStreak, currentWinStreak)
+        winningIndexes.push(spinIndex)
         series.push('W')
         resolvedAt = spinIndex
         break
@@ -116,6 +135,7 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
 
       if (round === 5) {
         losses += 1
+        losingIndexes.push(spinIndex)
         series.push('L')
         if (currentWinStreak > 0) {
           winStreaks.push(currentWinStreak)
@@ -144,6 +164,10 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
     bestWinStreak,
     currentWinStreak,
     winStreaks,
+    signalIndexes,
+    leadingSignalIndexes,
+    winningIndexes,
+    losingIndexes,
     series: series.reverse()
   }
 }
@@ -164,6 +188,22 @@ export const Analytics: FC<AnalyticsProps> = ({
   const historyNumbers = evolutionRecentHistory.slice(0, 500)
   const allNumbersFromStart = recentNumbers.concat(historyNumbers).reverse()
   const signalSummary = useMemo(() => mapAllNumbersFromStart(allNumbersFromStart), [allNumbersFromStart])
+  const highlightedSignalIndexes = useMemo(() => {
+    const displayCount = recentNumbers.length + historyNumbers.length
+    return new Set(signalSummary.signalIndexes.map((index) => displayCount - 1 - index))
+  }, [historyNumbers.length, recentNumbers.length, signalSummary.signalIndexes])
+  const highlightedLeadingSignalIndexes = useMemo(() => {
+    const displayCount = recentNumbers.length + historyNumbers.length
+    return new Set(signalSummary.leadingSignalIndexes.map((index) => displayCount - 1 - index))
+  }, [historyNumbers.length, recentNumbers.length, signalSummary.leadingSignalIndexes])
+  const highlightedWinningIndexes = useMemo(() => {
+    const displayCount = recentNumbers.length + historyNumbers.length
+    return new Set(signalSummary.winningIndexes.map((index) => displayCount - 1 - index))
+  }, [historyNumbers.length, recentNumbers.length, signalSummary.winningIndexes])
+  const highlightedLosingIndexes = useMemo(() => {
+    const displayCount = recentNumbers.length + historyNumbers.length
+    return new Set(signalSummary.losingIndexes.map((index) => displayCount - 1 - index))
+  }, [historyNumbers.length, recentNumbers.length, signalSummary.losingIndexes])
   const stats = useMemo(() => {
     const total = winningNumbers.length
     if (total === 0) {
@@ -284,8 +324,25 @@ export const Analytics: FC<AnalyticsProps> = ({
 
         {/* Lobby History — one row per table */}
         {/*{lobbyHistories.length > 0 && <LobbyHistories data={lobbyHistories} />}*/}
-        {recentNumbers.length > 0 && <MostRecentNumbers numbers={recentNumbers} />}
-        {historyNumbers.length > 0 && <HistoryNumbers numbers={historyNumbers} />}
+        {recentNumbers.length > 0 && (
+          <MostRecentNumbers
+            highlightedIndexes={highlightedSignalIndexes}
+            leadingSignalIndexes={highlightedLeadingSignalIndexes}
+            winningIndexes={highlightedWinningIndexes}
+            losingIndexes={highlightedLosingIndexes}
+            numbers={recentNumbers}
+          />
+        )}
+        {historyNumbers.length > 0 && (
+          <HistoryNumbers
+            highlightedIndexes={highlightedSignalIndexes}
+            leadingSignalIndexes={highlightedLeadingSignalIndexes}
+            winningIndexes={highlightedWinningIndexes}
+            losingIndexes={highlightedLosingIndexes}
+            indexOffset={recentNumbers.length}
+            numbers={historyNumbers}
+          />
+        )}
         {allNumbersFromStart.length > 0 && (
           <SignalOverview label={`Analysis`} total={allNumbersFromStart.length} summary={signalSummary} />
         )}
@@ -382,33 +439,73 @@ const LobbyHistories = ({ data }: LobbyHistoriesProps) => (
   </div>
 )
 
-const MostRecentNumbers = ({ numbers }: { numbers: number[] }) => (
-  <div className={cn('rounded-sm p-3 space-y-2 bg-neutral-900')}>
-    <div className='flex items-end justify-between gap-3'>
+const MostRecentNumbers = ({
+  numbers,
+  highlightedIndexes,
+  leadingSignalIndexes,
+  winningIndexes,
+  losingIndexes
+}: {
+  numbers: number[]
+  highlightedIndexes: ReadonlySet<number>
+  leadingSignalIndexes: ReadonlySet<number>
+  winningIndexes: ReadonlySet<number>
+  losingIndexes: ReadonlySet<number>
+}) => (
+  <div className={cn('rounded-sm p-2 space-y-2 bg-neutral-900')}>
+    <div className='flex items-center justify-between gap-3'>
       <div>
-        <h2 className='font-okx text-sm font-semibold uppercase text-white'>Most Recent</h2>
+        <h2 className='font-okx font-medium text-white/70 text-sm uppercase'>Most Recent</h2>
       </div>
-      <p className='text-xs font-okx text-neutral-400'>{numbers.length} captured</p>
+      <p className='font-okx text-neutral-400 text-sm '>{numbers.length}</p>
     </div>
-    <div className='flex max-h-64 flex-wrap gap-1 overflow-y-auto pr-1'>
+    <div className='flex max-h-64 flex-wrap gap-0.75 overflow-y-auto pr-1'>
       {numbers.map((number, index) => (
-        <LobbyNumber key={`${number}-${index}`} number={number} />
+        <LobbyNumber
+          key={`${number}-${index}`}
+          highlighted={highlightedIndexes.has(index)}
+          leadingSignal={leadingSignalIndexes.has(index)}
+          winning={winningIndexes.has(index)}
+          losing={losingIndexes.has(index)}
+          number={number}
+        />
       ))}
     </div>
   </div>
 )
 
-const HistoryNumbers = ({ numbers }: { numbers: number[] }) => (
-  <div className={cn('rounded-sm p-3 space-y-2 bg-neutral-900')}>
-    <div className='flex items-end justify-between gap-3'>
+const HistoryNumbers = ({
+  numbers,
+  highlightedIndexes,
+  leadingSignalIndexes,
+  winningIndexes,
+  losingIndexes,
+  indexOffset = 0
+}: {
+  numbers: number[]
+  highlightedIndexes: ReadonlySet<number>
+  leadingSignalIndexes: ReadonlySet<number>
+  winningIndexes: ReadonlySet<number>
+  losingIndexes: ReadonlySet<number>
+  indexOffset?: number
+}) => (
+  <div className={cn('rounded-sm p-2 space-y-2 bg-neutral-900')}>
+    <div className='flex items-center justify-between gap-3'>
       <div>
-        <h2 className='font-okx text-sm font-semibold uppercase text-white'>History</h2>
+        <h2 className='font-okx text-sm font-medium uppercase text-white/70'>History</h2>
       </div>
-      <p className='text-xs font-okx text-neutral-400'>{numbers.length} captured</p>
+      <p className='text-sm font-okx text-neutral-400'>{numbers.length}</p>
     </div>
-    <div className='flex max-h-64 flex-wrap gap-1 overflow-y-auto pr-1'>
+    <div className='flex max-h-140 flex-wrap gap-1.25 overflow-y-auto'>
       {numbers.map((number, index) => (
-        <LobbyNumber key={`${number}-${index}`} number={number} />
+        <LobbyNumber
+          key={`${number}-${index}`}
+          highlighted={highlightedIndexes.has(index + indexOffset)}
+          leadingSignal={leadingSignalIndexes.has(index + indexOffset)}
+          winning={winningIndexes.has(index + indexOffset)}
+          losing={losingIndexes.has(index + indexOffset)}
+          number={number}
+        />
       ))}
     </div>
   </div>
@@ -430,11 +527,11 @@ const SignalOverview = ({ label, total, summary }: SignalOverviewProps) => {
         <p className='text-xs font-okx text-neutral-400'>{total} captured</p>
       </div>
       <div className='grid grid-cols-4 gap-1 text-xs'>
-        <StatCard title='Signals' value={summary.signalsFound} color='neutral' />
+        <StatCard title='Signals' value={summary.signalsFound} color='sky' />
         <StatCard
           title='Wins'
           value={summary.wins}
-          color='emerald'
+          color='gold'
           extra={<span>{((summary.wins / summary.signalsFound) * 100).toFixed(0)}%</span>}
         />
         <StatCard
@@ -450,11 +547,11 @@ const SignalOverview = ({ label, total, summary }: SignalOverviewProps) => {
           <span
             key={`${outcome}-${index}`}
             className={cn(
-              'inline-flex h-5 min-w-5 items-center justify-center rounded-xs px-1 text-[10px] font-okx font-semibold',
+              'inline-flex h-6 min-w-7 items-center justify-center rounded-xs px-1 text-[12px] font-okx font-semibold',
               outcome === 'W'
-                ? 'bg-amber-300/20 text-amber-200'
+                ? 'bg-amber-300/30 text-amber-100'
                 : outcome === '0'
-                  ? 'bg-emerald-300/20 text-emerald-200'
+                  ? 'bg-emerald-700 text-white'
                   : 'bg-zinc-300/20 text-zinc-200'
             )}>
             {outcome}
@@ -472,20 +569,22 @@ interface StatCardProps {
   subtitle?: string
   icon?: ReactNode
   trend?: 'up' | 'down' | 'neutral'
-  color?: 'emerald' | 'neutral' | 'rose'
+  color?: 'emerald' | 'neutral' | 'rose' | 'gold' | 'sky'
   extra?: ReactNode
 }
 
 const STAT_VALUE_CLASS_NAME: Record<NonNullable<StatCardProps['color']>, string> = {
   emerald: 'bg-linear-to-r from-emerald-400 to-emerald-300 bg-clip-text text-transparent',
   neutral: 'bg-linear-to-r from-neutral-200 to-neutral-400 bg-clip-text text-transparent',
-  rose: 'bg-linear-to-r from-rose-400 to-rose-300 bg-clip-text text-transparent'
+  rose: 'bg-linear-to-r from-red-500 to-red-400 bg-clip-text text-transparent',
+  gold: 'bg-linear-to-r from-yellow-400 to-yellow-400 bg-clip-text text-transparent',
+  sky: 'bg-linear-to-r from-sky-500 to-sky-500 bg-clip-text text-transparent'
 }
 
 const StatCard: FC<StatCardProps> = ({ title, value, trend, color = 'emerald', extra }) => (
   <div className={cn('rounded-sm p-2 bg-neutral-700')}>
     <div className='flex items-center justify-between'>
-      <span className='text-xs font-ios text-neutral-400 uppercase tracking-wider'>{title}</span>
+      <span className='text-[9px] font-ios text-neutral-300 uppercase tracking-widest'>{title}</span>
       {extra}
     </div>
     <div className='flex items-end gap-0'>
@@ -676,11 +775,30 @@ const NumberBadge: FC<NumberBadgeProps> = ({ number, count, isHot = true, showCo
   )
 }
 
-const LobbyNumber: FC<{ number: number }> = ({ number }) => {
-  const color = number === 0 ? 'bg-emerald-700' : RED_NUMBERS.includes(number) ? 'bg-[#B51B13]' : 'bg-neutral-700'
+const LobbyNumber: FC<{
+  number: number
+  highlighted?: boolean
+  leadingSignal?: boolean
+  winning?: boolean
+  losing?: boolean
+}> = ({ number, highlighted = false, leadingSignal = false, winning = false, losing = false }) => {
+  const color =
+    winning && leadingSignal
+      ? 'bg-pink-400 text-neutral-50'
+      : winning
+        ? 'bg-yellow-300 text-neutral-900'
+        : losing
+          ? 'bg-red-500 text-white'
+          : highlighted
+            ? 'bg-sky-600 text-neutral-100'
+            : number === 0
+              ? 'bg-emerald-700 text-white'
+              : RED_NUMBERS.includes(number)
+                ? 'bg-neutral-100 text-red-600'
+                : 'bg-neutral-500 text-white'
   return (
     <span
-      className={`${color} w-6 h-4.5 rounded-xs flex items-center justify-center text-[10px] font-medium text-white`}>
+      className={`${color} min-w-6 max-w-8 min-h-5 max-h-5 rounded-none flex items-center justify-center text-[13px] font-semibold`}>
       {number}
     </span>
   )
