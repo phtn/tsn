@@ -8,6 +8,7 @@ import {
   ORPHELINS_G,
   RED_NUMBERS,
   resolveKimQuadrantPreference,
+  selectKimQuadrant,
   TIER_G,
   VOISINS_G
 } from '../../../lib/roulette'
@@ -89,6 +90,7 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
       currentQuadrant = selectedQuadrant
     }
 
+    const activeQuadrants: KimQuadrantId[] = selectedQuadrant ? [selectedQuadrant] : []
     let resolvedAt: number | null = null
     let restartAtLeadingSignal = false
 
@@ -106,7 +108,7 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
       const previousSpinNumber = allNumbersFromStart[spinIndex - 1] ?? null
       const isRepeatWin =
         round > 1 && landedNumber !== 0 && previousSpinNumber !== null && landedNumber === previousSpinNumber
-      const isQuadrantWin = selectedQuadrant ? KIMS_ALGO_QUADRANTS[selectedQuadrant].includes(landedNumber) : false
+      const isQuadrantWin = activeQuadrants.some((quadrant) => KIMS_ALGO_QUADRANTS[quadrant].includes(landedNumber))
       const isSignalWin =
         previousSpinNumber !== null &&
         (getKimQuadrantsContainingPair(previousSpinNumber, landedNumber).length > 0 ||
@@ -116,6 +118,7 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
       if (isZeroLoss) {
         zeroLosses += 1
         losses += 1
+        losingIndexes.push(spinIndex)
         series.push('0')
         if (currentWinStreak > 0) {
           winStreaks.push(currentWinStreak)
@@ -147,6 +150,16 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
         }
         currentWinStreak = 0
         resolvedAt = spinIndex
+      }
+
+      const nextSelection = selectKimQuadrant(landedNumber, {
+        currentQuadrant,
+        usedQuadrants: activeQuadrants,
+        hotNumbers: getHotNumbers(allNumbersFromStart.slice(0, spinIndex + 1))
+      })
+      if (nextSelection.selectedQuadrant) {
+        currentQuadrant = nextSelection.selectedQuadrant
+        activeQuadrants.push(nextSelection.selectedQuadrant)
       }
     }
 
@@ -530,6 +543,11 @@ interface SignalOverviewProps {
 }
 
 const SignalOverview = ({ label, total, summary }: SignalOverviewProps) => {
+  const resolvedSignals = summary.wins + summary.losses
+  const pendingSignals = Math.max(0, summary.signalsFound - resolvedSignals)
+  const winPct = resolvedSignals > 0 ? (summary.wins / resolvedSignals) * 100 : 0
+  const lossPct = resolvedSignals > 0 ? (summary.losses / resolvedSignals) * 100 : 0
+
   return (
     <div className={cn('rounded-sm p-3 space-y-2 bg-neutral-900')}>
       <div className='flex items-end justify-between gap-3'>
@@ -539,19 +557,14 @@ const SignalOverview = ({ label, total, summary }: SignalOverviewProps) => {
         <p className='text-xs font-okx text-neutral-400'>{total} captured</p>
       </div>
       <div className='grid grid-cols-4 gap-1 text-xs'>
-        <StatCard title='Signals' value={summary.signalsFound} color='sky' />
         <StatCard
-          title='Wins'
-          value={summary.wins}
-          color='gold'
-          extra={<span>{((summary.wins / summary.signalsFound) * 100).toFixed(0)}%</span>}
+          title='Signals'
+          value={summary.signalsFound}
+          color='sky'
+          extra={pendingSignals > 0 ? <span>{pendingSignals} pending</span> : null}
         />
-        <StatCard
-          title='Losses'
-          value={summary.losses}
-          color='rose'
-          extra={<span>{((summary.losses / summary.signalsFound) * 100).toFixed(0)}%</span>}
-        />
+        <StatCard title='Wins' value={summary.wins} color='gold' extra={<span>{winPct.toFixed(0)}%</span>} />
+        <StatCard title='Losses' value={summary.losses} color='rose' extra={<span>{lossPct.toFixed(0)}%</span>} />
         <StatCard title='Best Streak' value={summary.bestWinStreak} color='neutral' />
       </div>
       <div className='flex flex-wrap gap-1'>
@@ -794,21 +807,22 @@ const LobbyNumber: FC<{
   winning?: boolean
   losing?: boolean
 }> = ({ number, highlighted = false, leadingSignal = false, winning = false, losing = false }) => {
-  const color = winning && leadingSignal
-    ? 'bg-pink-400 text-neutral-50'
-    : winning
-      ? 'bg-yellow-300 text-neutral-900'
-      : losing
-        ? 'bg-red-500 text-white'
-        : leadingSignal
-          ? 'bg-pink-400 text-neutral-50'
-          : highlighted
-            ? 'bg-sky-600 text-neutral-100'
-            : number === 0
-              ? 'bg-emerald-700 text-white'
-              : RED_NUMBERS.includes(number)
-                ? 'bg-neutral-100 text-red-600'
-                : 'bg-neutral-500 text-white'
+  const color =
+    winning && leadingSignal
+      ? 'bg-pink-400 text-neutral-50'
+      : winning
+        ? 'bg-yellow-300 text-neutral-900'
+        : losing
+          ? 'bg-red-500 text-white'
+          : leadingSignal
+            ? 'bg-pink-400 text-neutral-50'
+            : highlighted
+              ? 'bg-sky-600 text-neutral-100'
+              : number === 0
+                ? 'bg-emerald-700 text-white'
+                : RED_NUMBERS.includes(number)
+                  ? 'bg-neutral-100 text-red-600'
+                  : 'bg-neutral-500 text-white'
   return (
     <span
       className={`${color} min-w-6 max-w-8 min-h-5 max-h-5 rounded-none flex items-center justify-center text-[13px] font-semibold`}>
