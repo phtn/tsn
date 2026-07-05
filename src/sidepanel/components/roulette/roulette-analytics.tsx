@@ -46,6 +46,10 @@ interface SignalSummary {
 
 type SignalOutcome = 'W' | 'L' | '0'
 
+function isRepeatSignalPair(first: number, second: number) {
+  return first !== 0 && first === second
+}
+
 function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalSummary {
   let signalsFound = 0
   let wins = 0
@@ -66,8 +70,9 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
     const first = allNumbersFromStart[index - 1]
     const second = allNumbersFromStart[index]
     const candidateQuadrants = getKimQuadrantsContainingPair(first, second)
+    const isRepeatSignal = isRepeatSignalPair(first, second)
 
-    if (candidateQuadrants.length === 0) {
+    if (candidateQuadrants.length === 0 && !isRepeatSignal) {
       index += 1
       continue
     }
@@ -85,6 +90,7 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
     }
 
     let resolvedAt: number | null = null
+    let restartAtLeadingSignal = false
 
     for (let round = 1; round <= 5; round++) {
       const spinIndex = index + round
@@ -101,7 +107,11 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
       const isRepeatWin =
         round > 1 && landedNumber !== 0 && previousSpinNumber !== null && landedNumber === previousSpinNumber
       const isQuadrantWin = selectedQuadrant ? KIMS_ALGO_QUADRANTS[selectedQuadrant].includes(landedNumber) : false
-      const isWin = isQuadrantWin || isZeroWin || isRepeatWin
+      const isSignalWin =
+        previousSpinNumber !== null &&
+        (getKimQuadrantsContainingPair(previousSpinNumber, landedNumber).length > 0 ||
+          isRepeatSignalPair(previousSpinNumber, landedNumber))
+      const isWin = isQuadrantWin || isZeroWin || isRepeatWin || isSignalWin
 
       if (isZeroLoss) {
         zeroLosses += 1
@@ -116,14 +126,9 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
       }
 
       if (isWin) {
-        const isWinningSignal =
-          previousSpinNumber !== null && getKimQuadrantsContainingPair(previousSpinNumber, landedNumber).length > 0
-
         wins += 1
-        if (isWinningSignal) {
-          signalsFound += 1
-          signalIndexes.push(spinIndex - 1, spinIndex)
-          leadingSignalIndexes.push(spinIndex)
+        if (isSignalWin) {
+          restartAtLeadingSignal = true
         }
         currentWinStreak += 1
         bestWinStreak = Math.max(bestWinStreak, currentWinStreak)
@@ -149,7 +154,7 @@ function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalS
       break
     }
 
-    index = resolvedAt + 1
+    index = restartAtLeadingSignal ? resolvedAt : resolvedAt + 1
   }
 
   if (currentWinStreak > 0) {
@@ -184,8 +189,11 @@ export const Analytics: FC<AnalyticsProps> = ({
     .map((result) => result.winningNumber)
     .flat()
     .reverse()
-  const recentNumbers = evolutionRecentNumbers.slice(0, 500)
-  const historyNumbers = evolutionRecentHistory.slice(0, 500)
+  const recentNumbers = evolutionRecentNumbers.slice(0, 501)
+  const historyNumbers = evolutionRecentHistory.slice(0, 501)
+  const mostRecentNumbers = recentNumbers.concat(historyNumbers).slice(0, 13)
+  const historyConnectorCount = Math.max(0, mostRecentNumbers.length - recentNumbers.length)
+  const displayedHistoryNumbers = historyNumbers.slice(historyConnectorCount)
   const allNumbersFromStart = recentNumbers.concat(historyNumbers).reverse()
   const signalSummary = useMemo(() => mapAllNumbersFromStart(allNumbersFromStart), [allNumbersFromStart])
   const highlightedSignalIndexes = useMemo(() => {
@@ -324,23 +332,23 @@ export const Analytics: FC<AnalyticsProps> = ({
 
         {/* Lobby History — one row per table */}
         {/*{lobbyHistories.length > 0 && <LobbyHistories data={lobbyHistories} />}*/}
-        {recentNumbers.length > 0 && (
+        {mostRecentNumbers.length > 0 && (
           <MostRecentNumbers
             highlightedIndexes={highlightedSignalIndexes}
             leadingSignalIndexes={highlightedLeadingSignalIndexes}
             winningIndexes={highlightedWinningIndexes}
             losingIndexes={highlightedLosingIndexes}
-            numbers={recentNumbers}
+            numbers={mostRecentNumbers}
           />
         )}
-        {historyNumbers.length > 0 && (
+        {displayedHistoryNumbers.length > 0 && (
           <HistoryNumbers
             highlightedIndexes={highlightedSignalIndexes}
             leadingSignalIndexes={highlightedLeadingSignalIndexes}
             winningIndexes={highlightedWinningIndexes}
             losingIndexes={highlightedLosingIndexes}
-            indexOffset={recentNumbers.length}
-            numbers={historyNumbers}
+            indexOffset={recentNumbers.length + historyConnectorCount}
+            numbers={displayedHistoryNumbers}
           />
         )}
         {allNumbersFromStart.length > 0 && (
@@ -430,7 +438,7 @@ const LobbyHistories = ({ data }: LobbyHistoriesProps) => (
           }
         </span>
         <div className='flex gap-0.5 bg-white/40 p-0.5 rounded-xs'>
-          {numbers.slice(0, 10).map((n, i) => (
+          {numbers.slice(0, 11).map((n, i) => (
             <LobbyNumber key={i} number={n} />
           ))}
         </div>
@@ -451,28 +459,32 @@ const MostRecentNumbers = ({
   leadingSignalIndexes: ReadonlySet<number>
   winningIndexes: ReadonlySet<number>
   losingIndexes: ReadonlySet<number>
-}) => (
-  <div className={cn('rounded-sm p-2 space-y-2 bg-neutral-900')}>
-    <div className='flex items-center justify-between gap-3'>
-      <div>
-        <h2 className='font-okx font-medium text-white/70 text-sm uppercase'>Most Recent</h2>
+}) => {
+  const displayedNumbers = numbers.slice(0, 13)
+
+  return (
+    <div className={cn('rounded-sm p-2 space-y-2 bg-neutral-900')}>
+      <div className='flex items-center justify-between gap-3'>
+        <div>
+          <h2 className='font-okx font-medium text-white/70 text-sm uppercase'>Most Recent *</h2>
+        </div>
+        <p className='font-okx text-neutral-400 text-sm '>{displayedNumbers.length}</p>
       </div>
-      <p className='font-okx text-neutral-400 text-sm '>{numbers.length}</p>
+      <div className='flex max-h-64 flex-wrap gap-0.75 overflow-y-auto pr-1'>
+        {displayedNumbers.map((number, index) => (
+          <LobbyNumber
+            key={`${number}-${index}`}
+            highlighted={highlightedIndexes.has(index)}
+            leadingSignal={leadingSignalIndexes.has(index)}
+            winning={winningIndexes.has(index)}
+            losing={losingIndexes.has(index)}
+            number={number}
+          />
+        ))}
+      </div>
     </div>
-    <div className='flex max-h-64 flex-wrap gap-0.75 overflow-y-auto pr-1'>
-      {numbers.map((number, index) => (
-        <LobbyNumber
-          key={`${number}-${index}`}
-          highlighted={highlightedIndexes.has(index)}
-          leadingSignal={leadingSignalIndexes.has(index)}
-          winning={winningIndexes.has(index)}
-          losing={losingIndexes.has(index)}
-          number={number}
-        />
-      ))}
-    </div>
-  </div>
-)
+  )
+}
 
 const HistoryNumbers = ({
   numbers,
@@ -782,13 +794,14 @@ const LobbyNumber: FC<{
   winning?: boolean
   losing?: boolean
 }> = ({ number, highlighted = false, leadingSignal = false, winning = false, losing = false }) => {
-  const color =
-    winning && leadingSignal
-      ? 'bg-pink-400 text-neutral-50'
-      : winning
-        ? 'bg-yellow-300 text-neutral-900'
-        : losing
-          ? 'bg-red-500 text-white'
+  const color = winning && leadingSignal
+    ? 'bg-pink-400 text-neutral-50'
+    : winning
+      ? 'bg-yellow-300 text-neutral-900'
+      : losing
+        ? 'bg-red-500 text-white'
+        : leadingSignal
+          ? 'bg-pink-400 text-neutral-50'
           : highlighted
             ? 'bg-sky-600 text-neutral-100'
             : number === 0
