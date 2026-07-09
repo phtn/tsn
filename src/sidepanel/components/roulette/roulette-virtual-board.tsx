@@ -12,6 +12,11 @@ import {
 } from '../../../lib/roulette'
 import { cn } from '../../../lib/utils'
 import type { PanelStatus } from '../../../types'
+import {
+  buildRouletteSpinResultPayload,
+  buildRouletteWaitingSpinResultPayload,
+  sendRouletteSpinResult
+} from '../../lib/rouletteSpinResults'
 import { ChipStack, EVO_BUTTON_SELECTORS } from './chip-stack'
 import { RouletteControls } from './roulette-controls'
 import { RouletteGrid } from './roulette-grid'
@@ -32,13 +37,15 @@ interface RouletteVirtualBoardProps {
   evolutionRebetVisible: boolean
   evolutionBettingOpen: boolean
   evolutionTableState: TableState | null
+  rouletteResultEndpointUrl: string
 }
 
 export function RouletteVirtualBoard({
   winningNumbers,
   evolutionChips,
   evolutionRebetVisible,
-  evolutionTableState
+  evolutionTableState,
+  rouletteResultEndpointUrl
 }: RouletteVirtualBoardProps) {
   const [startingQuadrant, setStartingQuadrant] = useState<KimQuadrantId>('q1')
   const [hoveredQuadrant, setHoveredQuadrant] = useState<KimQuadrantId | null>(null)
@@ -56,8 +63,8 @@ export function RouletteVirtualBoard({
   const [lockedBankValue, setLockedBankValue] = useState<number | null>(null)
   const [inputMode, setInputMode] = useState<'base' | 'bank'>('base')
   const [selectedChip, setSelectedChip] = useState<number | null>(null)
-  // Auto-arm: arm the board automatically when a KIM signal is detected
-  const [auto, setAuto] = useState(false)
+  // Auto-arm mode: off, semi (one-shot), or auto (continuous)
+  const [autoMode, setAutoMode] = useState<'off' | 'semi' | 'auto'>('off')
   // Loaded: auto-execute v-board bets on the actual Evolution table each betting window
   const [loaded, setLoaded] = useState(false)
   // Evolution's DOM takes a moment to render bet spots after the window signal fires.
@@ -67,6 +74,8 @@ export function RouletteVirtualBoard({
   const [betMultiplier, setBetMultiplier] = useState<number>(1)
 
   const processedStepCountRef = useRef(0)
+  const waitingSpinSentCountRef = useRef(winningNumbers.length)
+  const prevEvolutionTableStateRef = useRef<TableState | null>(evolutionTableState)
   // Edge-detection refs
   const prevSignalFoundRef = useRef(false)
   // lastBetStepRef: step for which bets were actually *dispatched* to the background.
@@ -84,14 +93,23 @@ export function RouletteVirtualBoard({
   // in-flight timers when a spin result arrives mid-window.
 
   const parsedInput = Number.parseFloat(baseUnitInput)
-  const baseUnit =
+  const baseUnitCandidate =
     selectedChip !== null
       ? selectedChip * betMultiplier
       : Number.isFinite(parsedInput) && parsedInput > 0
         ? inputMode === 'bank'
           ? parsedInput / 272
           : parsedInput
-        : 1
+        : null
+  const [baseUnitValue, setBaseUnitValue] = useState(baseUnitCandidate ?? 1)
+  const baseUnit = baseUnitCandidate ?? baseUnitValue
+  const auto = autoMode !== 'off'
+
+  useEffect(() => {
+    if (baseUnitCandidate === null) return
+    setBaseUnitValue((current) => (current === baseUnitCandidate ? current : baseUnitCandidate))
+  }, [baseUnitCandidate])
+
   const hotNumberSource = isTracking ? trackedWinningNumbers : winningNumbers
   const hotNumbers = useMemo(() => getHotNumbers(hotNumberSource), [hotNumberSource])
   const selectedStartingQuadrantNumbers = useMemo(
@@ -121,22 +139,22 @@ export function RouletteVirtualBoard({
     }
   }, [selectedChip, betMultiplier])
 
-  // Accumulate placed numbers across rounds and align them to consumed spins.
-  // Chips persist on the Evolution table, so when a new result arrives before a
-  // fresh placement snapshot is logged for that step, the step should still see
-  // the last known cumulative table state.
-  const cumulativePlacedSnapshots = useMemo(() => {
+  // Accumulate placed numbers across rounds — chips persist on the Evolution table,
+  // so the full set of numbers physically on the table at step N is the union of
+  // all per-round placements up to and including that step.
+  const cumulativePlacedLog = useMemo(() => {
     const result: number[][] = []
     const accumulated = new Set<number>()
     for (const nums of placedLog) {
       nums.forEach((n) => accumulated.add(n))
       result.push([...accumulated])
     }
-    while (result.length < trackedWinningNumbers.length) {
-      result.push([...accumulated])
-    }
     return result
-  }, [placedLog, trackedWinningNumbers.length])
+  }, [placedLog])
+  const placedNumbersPerTrackedStep = useMemo(
+    () => trackedWinningNumbers.map((_, index) => cumulativePlacedLog[index] ?? []),
+    [cumulativePlacedLog, trackedWinningNumbers]
+  )
 
   const simulation = useMemo(
     () =>
@@ -146,13 +164,13 @@ export function RouletteVirtualBoard({
         allowOverlaps,
         spreadSelectionMode,
         scatter,
-        placedNumbersPerStep: cumulativePlacedSnapshots
+        placedNumbersPerStep: placedNumbersPerTrackedStep
       }),
     [
       allowOverlaps,
       baseUnit,
       hotNumbers,
-      cumulativePlacedSnapshots,
+      placedNumbersPerTrackedStep,
       scatter,
       spreadSelectionMode,
       startingQuadrant,
@@ -186,9 +204,9 @@ export function RouletteVirtualBoard({
       nextBet.totalStake,
     [lastResetIndex, nextBet, simulation]
   )
+  const winAmount = 36 * nextBet.unitStake
   // const recentSteps = simulation.steps.slice(-6).reverse()
-  const accPct =
-    lockedBankValue && lockedBankValue > 0 ? (accWinnings / (lockedBankValue + lockedBankValue / 2)) * 100 : 0
+  const accPct = lockedBankValue && lockedBankValue > 0 ? (accWinnings / lockedBankValue) * 100 : 0
 
   // Signal: 2 consecutive numbers share a quadrant — only meaningful when not armed
   const signalQuadrants = useMemo(() => {
@@ -215,6 +233,7 @@ export function RouletteVirtualBoard({
     if (winningNumbers.length < lastConsumedIndex) {
       setTrackedWinningNumbers([])
       setLastConsumedIndex(winningNumbers.length)
+      waitingSpinSentCountRef.current = winningNumbers.length
       return
     }
 
@@ -225,6 +244,255 @@ export function RouletteVirtualBoard({
     setTrackedWinningNumbers((current) => [...current, ...winningNumbers.slice(lastConsumedIndex)])
     setLastConsumedIndex(winningNumbers.length)
   }, [isTracking, lastConsumedIndex, winningNumbers])
+
+  useEffect(() => {
+    if (winningNumbers.length < waitingSpinSentCountRef.current) {
+      waitingSpinSentCountRef.current = winningNumbers.length
+      return
+    }
+
+    if (isTracking) {
+      waitingSpinSentCountRef.current = winningNumbers.length
+      return
+    }
+
+    if (winningNumbers.length === waitingSpinSentCountRef.current) {
+      return
+    }
+
+    const startIndex = waitingSpinSentCountRef.current
+    const newWinningNumbers = winningNumbers.slice(startIndex)
+    waitingSpinSentCountRef.current = winningNumbers.length
+
+    newWinningNumbers.forEach((winningNumber, index) => {
+      const payload = buildRouletteWaitingSpinResultPayload({
+        spinIndex: startIndex + index + 1,
+        winningNumber,
+        controls: {
+          winVerb,
+          lastWinProfit,
+          signalFound,
+          isTracking,
+          auto,
+          autoMode,
+          scatter,
+          allowOverlaps,
+          spreadSelectionMode,
+          loaded,
+          betStatus
+        },
+        virtualBoard: {
+          startingQuadrant,
+          baseUnit,
+          baseUnitInput,
+          inputMode,
+          selectedChip,
+          betMultiplier,
+          roundMultiplier,
+          totalStaked,
+          winAmount,
+          profit: winAmount - totalStaked,
+          accWinnings,
+          accPct,
+          winStreak,
+          lockedBankValue,
+          spins: winningNumbers.length,
+          trackedSpins: trackedWinningNumbers.length,
+          hotNumbers,
+          tableState: evolutionTableState
+        },
+        nextBet,
+        candidateQuadrants: signalQuadrants,
+        selectedQuadrant: autoStartingQuadrant
+      })
+      void sendRouletteSpinResult(payload, rouletteResultEndpointUrl)
+    })
+  }, [
+    accPct,
+    accWinnings,
+    allowOverlaps,
+    auto,
+    autoMode,
+    autoStartingQuadrant,
+    baseUnit,
+    baseUnitInput,
+    betMultiplier,
+    betStatus,
+    evolutionTableState,
+    hotNumbers,
+    inputMode,
+    isTracking,
+    lastWinProfit,
+    loaded,
+    lockedBankValue,
+    nextBet,
+    rouletteResultEndpointUrl,
+    roundMultiplier,
+    scatter,
+    selectedChip,
+    signalFound,
+    signalQuadrants,
+    spreadSelectionMode,
+    startingQuadrant,
+    totalStaked,
+    trackedWinningNumbers.length,
+    winAmount,
+    winStreak,
+    winVerb,
+    winningNumbers
+  ])
+
+  // Send a fresh snapshot whenever the table state changes, even if no new
+  // winning number has arrived. When armed, keep the current round alive if a
+  // signal is present; otherwise only emit the idle waiting snapshot.
+  useEffect(() => {
+    const previousTableState = prevEvolutionTableStateRef.current
+    prevEvolutionTableStateRef.current = evolutionTableState
+
+    if (previousTableState === evolutionTableState) return
+
+    if (isTracking) {
+      if (!signalFound) return
+
+      const latestStep = simulation.steps[simulation.steps.length - 1]
+      if (!latestStep) return
+
+      const stepIdx = latestStep.spinIndex - 1
+      const placedForStep = placedNumbersPerTrackedStep[stepIdx] ?? []
+      let sessionStake = latestStep.bet.totalStake
+
+      for (let i = stepIdx - 1; i >= 0; i--) {
+        const prevStep = simulation.steps[i]
+        if (prevStep.sessionOutcome !== 'continue') break
+        sessionStake += prevStep.bet.totalStake
+      }
+
+      const grossReturn = latestStep.hit ? getKimAlgoGrossReturn(latestStep.bet, latestStep.landedNumber) : 0
+      const payload = buildRouletteSpinResultPayload({
+        step: latestStep,
+        sessionStake,
+        grossReturn,
+        winningNumber: latestWinningNumber ?? null,
+        controls: {
+          winVerb,
+          lastWinProfit,
+          signalFound,
+          isTracking,
+          auto,
+          autoMode,
+          scatter,
+          allowOverlaps,
+          spreadSelectionMode,
+          loaded,
+          betStatus
+        },
+        virtualBoard: {
+          startingQuadrant,
+          baseUnit,
+          baseUnitInput,
+          inputMode,
+          selectedChip,
+          betMultiplier,
+          roundMultiplier,
+          totalStaked,
+          winAmount,
+          profit: winAmount - totalStaked,
+          accWinnings,
+          accPct,
+          winStreak,
+          lockedBankValue,
+          spins: winningNumbers.length,
+          trackedSpins: trackedWinningNumbers.length,
+          hotNumbers,
+          tableState: evolutionTableState
+        },
+        nextBet,
+        placedNumbers: placedForStep,
+        cumulativePlacedNumbers: placedForStep
+      })
+      void sendRouletteSpinResult(payload, rouletteResultEndpointUrl)
+      return
+    }
+
+    const currentWinningNumber = winningNumbers[winningNumbers.length - 1] ?? null
+    const payload = buildRouletteWaitingSpinResultPayload({
+      spinIndex: winningNumbers.length,
+      winningNumber: currentWinningNumber,
+      controls: {
+        winVerb,
+        lastWinProfit,
+        signalFound,
+        isTracking,
+        auto,
+        autoMode,
+        scatter,
+        allowOverlaps,
+        spreadSelectionMode,
+        loaded,
+        betStatus
+      },
+      virtualBoard: {
+        startingQuadrant,
+        baseUnit,
+        baseUnitInput,
+        inputMode,
+        selectedChip,
+        betMultiplier,
+        roundMultiplier,
+        totalStaked,
+        winAmount,
+        profit: winAmount - totalStaked,
+        accWinnings,
+        accPct,
+        winStreak,
+        lockedBankValue,
+        spins: winningNumbers.length,
+        trackedSpins: trackedWinningNumbers.length,
+        hotNumbers,
+        tableState: evolutionTableState
+      },
+      nextBet,
+      candidateQuadrants: signalQuadrants,
+      selectedQuadrant: autoStartingQuadrant
+    })
+    void sendRouletteSpinResult(payload, rouletteResultEndpointUrl)
+  }, [
+    accPct,
+    accWinnings,
+    allowOverlaps,
+    auto,
+    autoMode,
+    autoStartingQuadrant,
+    baseUnit,
+    baseUnitInput,
+    betMultiplier,
+    betStatus,
+    evolutionTableState,
+    hotNumbers,
+    inputMode,
+    isTracking,
+    lastWinProfit,
+    loaded,
+    lockedBankValue,
+    nextBet,
+    rouletteResultEndpointUrl,
+    roundMultiplier,
+    scatter,
+    selectedChip,
+    signalFound,
+    signalQuadrants,
+    spreadSelectionMode,
+    startingQuadrant,
+    totalStaked,
+    trackedWinningNumbers.length,
+    winAmount,
+    winStreak,
+    winVerb,
+    simulation.steps,
+    placedNumbersPerTrackedStep,
+    latestWinningNumber,
+    winningNumbers
+  ])
 
   // Persistent win streak + accumulated winnings — survive arm/disarm cycles
   useEffect(() => {
@@ -244,24 +512,68 @@ export function RouletteVirtualBoard({
 
     for (const step of newSteps) {
       const stepIdx = step.spinIndex - 1
-      const placedForStep = cumulativePlacedSnapshots[stepIdx]
-      const isWin = step.hitType !== 'miss' && !!placedForStep?.includes(step.landedNumber)
+      const placedForStep = placedNumbersPerTrackedStep[stepIdx] ?? []
+      const isWin = step.hit
+      let sessionStake = step.bet.totalStake
+      for (let i = stepIdx - 1; i >= 0; i--) {
+        const prevStep = simulation.steps[i]
+        if (prevStep.sessionOutcome !== 'continue') break
+        sessionStake += prevStep.bet.totalStake
+      }
+      const grossReturn = isWin ? getKimAlgoGrossReturn(step.bet, step.landedNumber) : 0
+      const profit = grossReturn - sessionStake
 
       if (!isWin) {
         if (step.sessionOutcome === 'reset_after_max_loss') streakReset = true
       } else {
         streakDelta += 1
-        // Sum stakes from the current session start up to and including this win step
-        let sessionStake = step.bet.totalStake
-        for (let i = stepIdx - 1; i >= 0; i--) {
-          const prevStep = simulation.steps[i]
-          if (prevStep.sessionOutcome !== 'continue') break
-          sessionStake += prevStep.bet.totalStake
-        }
-        const profit = getKimAlgoGrossReturn(step.bet, step.landedNumber) - sessionStake
         winningsGained += profit
         latestProfit = profit
       }
+
+      const payload = buildRouletteSpinResultPayload({
+        step,
+        sessionStake,
+        grossReturn,
+        winningNumber: latestWinningNumber ?? null,
+        controls: {
+          winVerb,
+          lastWinProfit: isWin ? profit : lastWinProfit,
+          signalFound,
+          isTracking,
+          auto,
+          autoMode,
+          scatter,
+          allowOverlaps,
+          spreadSelectionMode,
+          loaded,
+          betStatus
+        },
+        virtualBoard: {
+          startingQuadrant,
+          baseUnit,
+          baseUnitInput,
+          inputMode,
+          selectedChip,
+          betMultiplier,
+          roundMultiplier,
+          totalStaked,
+          winAmount,
+          profit: winAmount - totalStaked,
+          accWinnings: accWinnings + winningsGained,
+          accPct,
+          winStreak: streakReset ? 0 : winStreak + streakDelta,
+          lockedBankValue,
+          spins: winningNumbers.length,
+          trackedSpins: trackedWinningNumbers.length,
+          hotNumbers,
+          tableState: evolutionTableState
+        },
+        nextBet,
+        placedNumbers: placedForStep,
+        cumulativePlacedNumbers: placedForStep
+      })
+      void sendRouletteSpinResult(payload, rouletteResultEndpointUrl)
     }
 
     setWinStreak((prev) => (streakReset ? 0 : prev + streakDelta))
@@ -270,7 +582,41 @@ export function RouletteVirtualBoard({
       setLastWinProfit(latestProfit)
       setWinVerb(pickVerb())
     }
-  }, [simulation.steps, cumulativePlacedSnapshots])
+  }, [
+    accPct,
+    accWinnings,
+    allowOverlaps,
+    auto,
+    autoMode,
+    baseUnit,
+    baseUnitInput,
+    betMultiplier,
+    betStatus,
+    cumulativePlacedLog,
+    evolutionTableState,
+    hotNumbers,
+    inputMode,
+    isTracking,
+    lastWinProfit,
+    loaded,
+    lockedBankValue,
+    nextBet,
+    placedNumbersPerTrackedStep,
+    rouletteResultEndpointUrl,
+    roundMultiplier,
+    scatter,
+    selectedChip,
+    signalFound,
+    simulation.steps,
+    spreadSelectionMode,
+    startingQuadrant,
+    totalStaked,
+    trackedWinningNumbers.length,
+    winAmount,
+    winStreak,
+    winVerb,
+    winningNumbers.length
+  ])
 
   // Auto-disarm on win, max-loss, or zero without a hedge (rounds 1–3)
   useEffect(() => {
@@ -282,14 +628,17 @@ export function RouletteVirtualBoard({
       latestStep.sessionOutcome === 'reset_after_max_loss' ||
       (latestStep.landedNumber === 0 && latestStep.bet.zeroStake === 0)
     ) {
+      if (autoMode === 'semi' && latestStep.sessionOutcome !== 'continue') {
+        setAutoMode('off')
+      }
       setIsTracking(false)
     }
-  }, [simulation.steps, isTracking])
+  }, [autoMode, simulation.steps, isTracking])
 
   // ── Auto-arm ──────────────────────────────────────────────────────────────
-  // Fire exactly once on the rising edge of signalFound while auto is on.
+  // Fire exactly once on the rising edge of signalFound while auto mode is on.
   useEffect(() => {
-    if (!auto) {
+    if (autoMode === 'off') {
       // Reset ref so enabling auto with an existing signal is treated as a rising edge.
       prevSignalFoundRef.current = false
       return
@@ -310,7 +659,7 @@ export function RouletteVirtualBoard({
       setLockedBankValue(baseUnit * 272)
       setIsTracking(true)
     }
-  }, [auto, signalFound, isTracking, autoStartingQuadrant, baseUnit, winningNumbers.length])
+  }, [autoMode, signalFound, isTracking, autoStartingQuadrant, baseUnit, winningNumbers.length])
 
   // ── Loaded: auto-execute bets once per simulation step ───────────────────
   // Reset the step guard on every arm/disarm so each new session starts fresh.
@@ -376,7 +725,7 @@ export function RouletteVirtualBoard({
           const ok = !chrome.runtime.lastError && response?.ok && missed.length === 0
 
           setPlacedLog((prev) => [...prev, [...new Set(placed)]])
-          console.log(`[kim] R${round} placed on table: [${placed.join(', ')}]`)
+          console.log(`[K] R${round} placed on table: [${placed.join(', ')}]`)
 
           setBetStatus(ok ? 'ok' : 'missed')
           setTimeout(() => setBetStatus('idle'), 4000)
@@ -396,7 +745,6 @@ export function RouletteVirtualBoard({
       clearTimeout(timer)
       claimedStepRef.current = -1 // release claim without dispatching — next window can retry
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [evolutionTableState, loaded, isTracking, selectedChip])
   // ^ placementMap/roundMultiplier/nextBet/simulation.steps.length intentionally
   //   omitted from deps — snapshotted into locals (or read via ref) at fire time.
@@ -435,8 +783,6 @@ export function RouletteVirtualBoard({
     })
   }
 
-  const winAmount = 36 * nextBet.unitStake
-
   const sendEvoClick = useCallback((selector: string, label: string) => {
     chrome.runtime.sendMessage({ type: 'CLICK_EVOLUTION_ELEMENT', selector }, (response) => {
       if (chrome.runtime.lastError) {
@@ -455,7 +801,10 @@ export function RouletteVirtualBoard({
     [sendEvoClick]
   )
 
-  const toggleAuto = useCallback(() => setAuto((v) => !v), [setAuto])
+  const toggleAutoMode = useCallback(
+    () => setAutoMode((current) => (current === 'off' ? 'semi' : current === 'semi' ? 'auto' : 'off')),
+    [setAutoMode]
+  )
   const toggleLoaded = useCallback(() => setLoaded((v) => !v), [setLoaded])
   const toggleScatter = useCallback(() => setScatter((v) => !v), [setScatter])
   const toggleAllowOverlaps = useCallback(() => setAllowOverlaps((v) => !v), [setAllowOverlaps])
@@ -481,8 +830,8 @@ export function RouletteVirtualBoard({
         lastWinProfit={lastWinProfit}
         signalFound={signalFound}
         isTracking={isTracking}
-        auto={auto}
-        toggleAuto={toggleAuto}
+        autoMode={autoMode}
+        toggleAutoMode={toggleAutoMode}
         scatter={scatter}
         toggleScatter={toggleScatter}
         allowOverlaps={allowOverlaps}
@@ -528,6 +877,7 @@ export function RouletteVirtualBoard({
 
           <div className='mt-2'>
             <ChipStack
+              isTracking={isTracking}
               chipsDetected={evolutionChips}
               onChipSelect={onChipSelect}
               onUndo={onUndo}
@@ -535,7 +885,6 @@ export function RouletteVirtualBoard({
               onBetMultiply={onBetMultiply}
               betMultiplier={betMultiplier}
               tableState={evolutionTableState}
-              isTracking={isTracking}
             />
           </div>
 
@@ -557,23 +906,21 @@ export function RouletteVirtualBoard({
                     nums.forEach((n) => seenDisplay.add(n))
                     if (displayNums.length === 0) return null
                     const step = simulation.steps[idx]
-                    const isWin =
-                      step != null &&
-                      step.hitType !== 'miss' &&
-                      cumulativePlacedSnapshots[idx]?.includes(step.landedNumber)
+                    const isWin = step != null && step.hit
                     return (
                       <Fragment key={idx}>
-                        {idx > 0 && <span className='shrink-0 text-slate-300 text-[0.55rem] font-thin'>│</span>}
+                        {idx > 0 && <span className='shrink-0 text-slate-400 text-[0.55rem] font-thin'>│</span>}
                         {displayNums.map((n) => (
                           <span
                             key={`${idx}-${n}`}
                             className={cn(
-                              'shrink-0 tabular-nums text-sm leading-none rounded-xs flex items-center justify-center w-5 h-4 font-okx font-semibold text-neutral-950',
+                              'shrink-0 tabular-nums text-[0.69rem] leading-none rounded-xs flex items-center justify-center w-5 h-4 font-okx font-semibold',
                               roundBgs[idx],
-                              {
-                                'bg-emerald-950/60 border-emerald-700/40 text-emerald-300': n === 0,
-                                'bg-neutral-900 font-bold text-emerald-500 text-lg -tracking-widest px-0.5': isWin
-                              }
+                              winningNumbers.slice().reverse()[0] === n && isWin
+                                ? 'bg-neutral-900 font-bold text-emerald-500 text-lg -tracking-widest px-0.5'
+                                : n === 0
+                                  ? 'bg-emerald-950/60 border-emerald-700/40 text-emerald-300'
+                                  : 'text-neutral-950'
                             )}>
                             {n}
                           </span>

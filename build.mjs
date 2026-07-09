@@ -44,14 +44,17 @@ function copySFX() {
 }
 
 // Process CSS with PostCSS - output to sidepanel.css to match HTML reference
-console.log('Processing CSS with PostCSS...')
+console.log('building...')
 try {
   copyGeistFonts()
   copySFX()
   execSync('bunx postcss src/global.css -o dist/sidepanel.css', { stdio: 'inherit' })
+  console.log('build complete.')
 } catch (error) {
   console.error('PostCSS processing failed:', error.message)
   process.exit(1)
+} finally {
+  console.log('writing outputs...')
 }
 
 const esbuildOptions = {

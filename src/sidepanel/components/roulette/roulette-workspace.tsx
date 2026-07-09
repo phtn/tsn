@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getNewRecentSpinCount, SAMPLE_SPIN_TAPE } from '../../../lib/roulette'
+import { getNewRecentSpinCount } from '../../../lib/roulette'
+import type { RouletteLobbyHistoriesEndpointConfig } from '../../../lib/rouletteLobbyHistories'
 import type { PanelStatus } from '../../../types'
-import type { RouletteStoredData, TableState } from '../../../types/roulette'
+import type { LobbyTableHistory, RouletteSpinResult, RouletteStoredData, TableState } from '../../../types/roulette'
+import type { RouletteResultEndpointConfig } from '../../lib/rouletteSpinResults'
 import { Analytics } from './roulette-analytics'
 import { RouletteHeader } from './roulette-header'
 import { RouletteVirtualBoard } from './roulette-virtual-board'
@@ -13,9 +15,16 @@ interface RouletteWorkspaceProps {
   evolutionRebetVisible: boolean
   evolutionBettingOpen: boolean
   evolutionRecentNumbers: number[]
+  evolutionRecentHistory: number[]
   evolutionTableState: TableState | null
   evolutionTableName: string | null
-  evolutionLobbyHistories: { tableId: string; numbers: number[] }[]
+  evolutionLobbyHistories: LobbyTableHistory[]
+  rouletteResultEndpointConfig: RouletteResultEndpointConfig
+  rouletteResultEndpointUrl: string
+  rouletteLobbyHistoriesEndpointConfig: RouletteLobbyHistoriesEndpointConfig
+  rouletteLobbyHistoriesEndpointUrl: string
+  saveRouletteResultEndpointConfig: (config: RouletteResultEndpointConfig) => void
+  saveRouletteLobbyHistoriesEndpointConfig: (config: RouletteLobbyHistoriesEndpointConfig) => void
   onReset: () => void
 }
 
@@ -26,28 +35,47 @@ export function RouletteWorkspace({
   evolutionRebetVisible,
   evolutionBettingOpen,
   evolutionRecentNumbers,
+  evolutionRecentHistory,
   evolutionTableState,
   evolutionTableName,
   evolutionLobbyHistories,
+  rouletteResultEndpointConfig,
+  rouletteResultEndpointUrl,
+  rouletteLobbyHistoriesEndpointConfig,
+  rouletteLobbyHistoriesEndpointUrl,
+  saveRouletteResultEndpointConfig,
+  saveRouletteLobbyHistoriesEndpointConfig,
   onReset
 }: RouletteWorkspaceProps) {
   // ── Live winning-numbers sequence ─────────────────────────────────────────
-  // evolutionRecentNumbers is newest-first (DOM-scraped or selected from active-table lobby history).
-  // We build a growing oldest-first sequence by detecting the overlap between
-  // successive recent-number snapshots, including repeated head values. This is
-  // more reliable than waiting
+  // evolutionRecentNumbers is newest-first (DOM-scraped, always fresh).
+  // We build a growing oldest-first sequence by detecting new spins as the
+  // head of evolutionRecentNumbers changes. This is more reliable than waiting
   // for websocket-captured stored results, which can fail when Evolution runs
   // in a cross-origin iframe.
   const prevRecentRef = useRef<number[]>([])
   const prevTableNameRef = useRef<string | null>(null)
   const [liveWinningNumbers, setLiveWinningNumbers] = useState<number[]>([])
+  const [relaySettingsVisible, setRelaySettingsVisible] = useState(false)
+  const [resultEndpointDraft, setResultEndpointDraft] =
+    useState<RouletteResultEndpointConfig>(rouletteResultEndpointConfig)
+  const [lobbyHistoriesEndpointDraft, setLobbyHistoriesEndpointDraft] = useState<RouletteLobbyHistoriesEndpointConfig>(
+    rouletteLobbyHistoriesEndpointConfig
+  )
+
+  useEffect(() => {
+    setResultEndpointDraft(rouletteResultEndpointConfig)
+  }, [rouletteResultEndpointConfig])
+
+  useEffect(() => {
+    setLobbyHistoriesEndpointDraft(rouletteLobbyHistoriesEndpointConfig)
+  }, [rouletteLobbyHistoriesEndpointConfig])
 
   useEffect(() => {
     const prev = prevRecentRef.current
     const curr = evolutionRecentNumbers
-    const tableChanged = evolutionTableName !== null && evolutionTableName !== prevTableNameRef.current
-
     if (curr.length === 0) return
+    const tableChanged = evolutionTableName !== null && evolutionTableName !== prevTableNameRef.current
     prevRecentRef.current = curr
     prevTableNameRef.current = evolutionTableName
 
@@ -79,25 +107,46 @@ export function RouletteWorkspace({
     prevTableNameRef.current = evolutionTableName
   }, [onReset, evolutionRecentNumbers, evolutionTableName])
 
-  const recentSpins = stats.results.slice(-10).reverse()
-  const previewSpins =
-    evolutionRecentNumbers.length > 0
-      ? evolutionRecentNumbers
-      : recentSpins.length > 0
-        ? recentSpins.map((result) => result.winningNumber)
-        : SAMPLE_SPIN_TAPE
-  const hasRealPreviewSpins = evolutionRecentNumbers.length > 0 || recentSpins.length > 0
+  const liveLatestSpin = useMemo<RouletteSpinResult | null>(() => {
+    const winningNumber = evolutionRecentNumbers[0]
+    if (typeof winningNumber !== 'number') return null
 
-  const latestSpin = recentSpins[0] ?? null
+    return {
+      id: `live-evolution-${winningNumber}`,
+      provider: 'stake',
+      source: 'evolution',
+      game: 'roulette',
+      description: '',
+      tableName: evolutionTableName ?? undefined,
+      winningNumber,
+      timestamp: Date.now(),
+      updatedAt: new Date().toISOString(),
+      url: '',
+      eventType: 'winSpots',
+      gameId: '',
+      code: '',
+      winSpots: {},
+      resultNumbers: [winningNumber]
+    }
+  }, [evolutionRecentNumbers, evolutionTableName])
+
+  const storedRecentSpins = useMemo(
+    () =>
+      stats.results
+        .slice(-12)
+        .reverse()
+        .map((result) => result.winningNumber),
+    [stats.results]
+  )
+  const storedLatestSpin = stats.results[stats.results.length - 1] ?? null
+
+  const previewSpins = evolutionRecentNumbers.length > 0 ? evolutionRecentNumbers : storedRecentSpins
+
+  const latestSpin = liveLatestSpin ?? storedLatestSpin
 
   return (
     <div className='space-y-0 pb-6 bg-[#1F2020]'>
-      <RouletteHeader
-        winningNumbers={winningNumbers}
-        hasRealSpins={hasRealPreviewSpins}
-        latestSpin={latestSpin}
-        previewSpins={previewSpins}
-      />
+      <RouletteHeader tableId={latestSpin?.id} latestSpin={latestSpin} previewSpins={previewSpins} />
       <RouletteVirtualBoard
         status={status}
         winningNumbers={winningNumbers}
@@ -105,8 +154,103 @@ export function RouletteWorkspace({
         evolutionRebetVisible={evolutionRebetVisible}
         evolutionBettingOpen={evolutionBettingOpen}
         evolutionTableState={evolutionTableState}
+        rouletteResultEndpointUrl={rouletteResultEndpointUrl}
       />
-      <Analytics lobbyHistories={evolutionLobbyHistories} onReset={handleReset} winningNumbers={winningNumbers} />
+      <Analytics
+        lobbyHistories={evolutionLobbyHistories}
+        evolutionRecentNumbers={evolutionRecentNumbers}
+        evolutionRecentHistory={evolutionRecentHistory}
+        onReset={handleReset}
+        results={stats.results}
+        latestSpin={latestSpin}
+        rouletteResultEndpointUrl={rouletteResultEndpointUrl}
+      />
+      <div className='mt-4 flex items-start gap-4'>
+        {relaySettingsVisible ? (
+          <div className='flex-1 space-y-3'>
+            <div className='space-y-2 rounded-[18px] border border-white/10 bg-black/20 p-3'>
+              <p className='text-xs font-semibold uppercase tracking-[0.24em] text-white/70'>Spin Results Relay</p>
+              <div className='flex gap-2'>
+                <input
+                  type='url'
+                  value={resultEndpointDraft.baseUrl}
+                  onChange={(event) =>
+                    setResultEndpointDraft({
+                      ...resultEndpointDraft,
+                      baseUrl: event.target.value
+                    })
+                  }
+                  className='flex-1 rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-[#c208fc] outline-none transition focus:border-slate-900'
+                  placeholder='http://localhost:3000'
+                />
+                <input
+                  type='text'
+                  value={resultEndpointDraft.endpoint}
+                  onChange={(event) =>
+                    setResultEndpointDraft({
+                      ...resultEndpointDraft,
+                      endpoint: event.target.value
+                    })
+                  }
+                  className='flex-1 rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-[#c208fc] outline-none transition focus:border-slate-900'
+                  placeholder='/api/roulette-results'
+                />
+                <button
+                  onClick={() => saveRouletteResultEndpointConfig(resultEndpointDraft)}
+                  className='rounded-[18px] bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800'>
+                  Save
+                </button>
+              </div>
+            </div>
+
+            <div className='space-y-2 rounded-[18px] border border-white/10 bg-black/20 p-3'>
+              <p className='text-xs font-semibold uppercase tracking-[0.24em] text-white/70'>Lobby Histories Relay</p>
+              <div className='flex gap-2'>
+                <input
+                  type='url'
+                  value={lobbyHistoriesEndpointDraft.baseUrl}
+                  onChange={(event) =>
+                    setLobbyHistoriesEndpointDraft({
+                      ...lobbyHistoriesEndpointDraft,
+                      baseUrl: event.target.value
+                    })
+                  }
+                  className='flex-1 rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-[#c208fc] outline-none transition focus:border-slate-900'
+                  placeholder='http://localhost:3000'
+                />
+                <input
+                  type='text'
+                  value={lobbyHistoriesEndpointDraft.endpoint}
+                  onChange={(event) =>
+                    setLobbyHistoriesEndpointDraft({
+                      ...lobbyHistoriesEndpointDraft,
+                      endpoint: event.target.value
+                    })
+                  }
+                  className='flex-1 rounded-[18px] border border-slate-200 bg-white px-4 py-3 text-sm text-[#c208fc] outline-none transition focus:border-slate-900'
+                  placeholder='/api/roulette-lobby-histories'
+                />
+                <button
+                  onClick={() => saveRouletteLobbyHistoriesEndpointConfig(lobbyHistoriesEndpointDraft)}
+                  className='rounded-[18px] bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800'>
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className='flex-1 space-y-1 text-sm font-semibold text-[#46D266]'>
+            <p>{rouletteResultEndpointUrl}</p>
+            <p>{rouletteLobbyHistoriesEndpointUrl}</p>
+          </div>
+        )}
+
+        <button
+          className='h-7 px-1.5 rounded-md text-gray-100'
+          onClick={() => setRelaySettingsVisible(!relaySettingsVisible)}>
+          Configure
+        </button>
+      </div>
     </div>
   )
 }

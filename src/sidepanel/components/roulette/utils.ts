@@ -1,4 +1,5 @@
 import { KimQuadrantId } from '@/src/lib/roulette'
+import { rtnMap } from './tables'
 
 export function fmtAmt(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(2)
@@ -35,18 +36,7 @@ export function getHotNumbers(values: readonly number[], limit: number = 6): num
     .map(([number]) => number)
 }
 
-const WIN_VERBS = [
-  'snatched',
-  'bagged',
-  'took',
-  'grabbed',
-  'swiped',
-  'cashed',
-  'scooped',
-  'catched',
-  'stashed',
-  'locked'
-]
+const WIN_VERBS = ['snatched', 'bagged', 'grabbed', 'swiped', 'cashed', 'scooped', 'stashed', 'locked', 'mugged']
 
 export function pickVerb(): string {
   return WIN_VERBS[Math.floor(Math.random() * WIN_VERBS.length)]
@@ -68,4 +58,15 @@ export function getPlacementMap(values: readonly number[]): Map<number, number> 
 export function getEffectiveStakeMultiplier(unitStake: number, baseUnit: number, placementCount: number): number {
   const roundMultiplier = baseUnit > 0 ? Math.max(1, Math.round(unitStake / baseUnit)) : 1
   return roundMultiplier * placementCount
+}
+
+export function getTableName(id: string | undefined, fallback = 'Roulette Table'): string {
+  if (!id) return fallback
+  const normalizedId = id
+    .trim()
+    .replace(/0+$/, '')
+    .replace(/^[A-Z][a-z]+/, '')
+    .toLowerCase()
+
+  return rtnMap[id] ?? rtnMap[normalizedId] ?? id ?? fallback
 }

@@ -1,5 +1,6 @@
 import { applyPaperBankrollToRound } from '../lib/paper-bankroll'
 import { resolveFinancialOutcome } from '../lib/result-outcome'
+import type { RouletteLobbyHistoriesCapture } from '../lib/rouletteLobbyHistories'
 import { extractTennisEvents, hasTennisSurface } from '../lib/tennis/scrape'
 import {
   normalizeStoredData,
@@ -13,6 +14,7 @@ import {
   normalizeRouletteStoredData,
   summarizeRouletteResults,
   type EvoMessage,
+  type LobbyTableHistory,
   type PragmaticPlayMessage,
   type RouletteSpinResult
 } from '../types/roulette'
@@ -47,7 +49,7 @@ let tennisSyncTimer: number | null = null
 let lastTennisSignature = ''
 let lastChipSignature = ''
 let lastRecentNumbersSignature = ''
-let lastTableNameSignature = ''
+let lastLobbyHistoriesSignature = ''
 
 const script = document.createElement('script')
 script.src = chrome.runtime.getURL('dist/injected.js')
@@ -73,13 +75,13 @@ function extractEvoTableState(payload: InterceptedNetworkPayload): string | null
   return state.toUpperCase()
 }
 
-function extractLobbyHistories(payload: InterceptedNetworkPayload): { tableId: string; numbers: number[] }[] | null {
+function extractLobbyHistories(payload: InterceptedNetworkPayload): LobbyTableHistory[] | null {
   const data = payload.data
   if (!isRecord(data) || data.type !== 'lobby.histories' || !isRecord(data.args)) return null
   const raw = data.args.histories
   if (!isRecord(raw)) return null
 
-  const tables: { tableId: string; numbers: number[] }[] = []
+  const tables: LobbyTableHistory[] = []
 
   for (const [tableId, tableData] of Object.entries(raw)) {
     if (!isRecord(tableData)) continue
@@ -112,7 +114,7 @@ async function processCapturedPayload(responseData: InterceptedNetworkPayload): 
 
     const lobbyHistories = extractLobbyHistories(responseData)
     if (lobbyHistories !== null) {
-      chrome.storage.local.set({ evolutionLobbyHistories: lobbyHistories })
+      await saveLobbyHistories(lobbyHistories, responseData)
       return
     }
 
@@ -1103,6 +1105,37 @@ function findExistingRouletteResultIndex(results: RouletteSpinResult[], candidat
   )
 }
 
+async function saveLobbyHistories(
+  lobbyHistories: LobbyTableHistory[],
+  responseData: InterceptedNetworkPayload
+): Promise<void> {
+  const capture: RouletteLobbyHistoriesCapture = {
+    histories: lobbyHistories.map(({ tableId, numbers }) => ({
+      tableId,
+      numbers: [...numbers]
+    })),
+    pageUrl: window.location.href,
+    captureUrl: responseData.url,
+    timestamp: responseData.timestamp ?? Date.now()
+  }
+
+  const nextSignature = JSON.stringify(capture.histories)
+  if (nextSignature === lastLobbyHistoriesSignature) {
+    return
+  }
+
+  lastLobbyHistoriesSignature = nextSignature
+
+  return new Promise((resolve) => {
+    chrome.storage.local.set(
+      { evolutionLobbyHistories: capture.histories, evolutionLobbyHistoriesCapture: capture },
+      () => {
+        resolve()
+      }
+    )
+  })
+}
+
 async function saveGameResults(candidates: GameResult[]): Promise<void> {
   if (candidates.length === 0) return
   return new Promise((resolve) => {
@@ -1572,6 +1605,37 @@ function scrapeEvolutionChipValues(): number[] {
   return values
 }
 
+function deepQueryAll(root: ParentNode, selector: string): HTMLElement[] {
+  const matches = Array.from(root.querySelectorAll<HTMLElement>(selector))
+  const hosts = root.querySelectorAll('*')
+
+  for (const host of hosts) {
+    if (host.shadowRoot) {
+      matches.push(...deepQueryAll(host.shadowRoot, selector))
+    }
+  }
+
+  return matches
+}
+
+function extractRouletteNumbersFromText(text: string): number[] {
+  const values: number[] = []
+  const matches = text.match(/\b\d{1,2}\b/g)
+
+  if (!matches) {
+    return values
+  }
+
+  for (const raw of matches) {
+    const parsed = Number(raw)
+    if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 36) {
+      values.push(parsed)
+    }
+  }
+
+  return values
+}
+
 function syncEvolutionChips(): void {
   const values = scrapeEvolutionChipValues()
   if (values.length === 0) {
@@ -1588,41 +1652,46 @@ function syncEvolutionChips(): void {
   chrome.storage.local.set({ evolutionChips: values })
 }
 
-function scrapeRecentNumbers(): number[] {
-  const containers = document.querySelectorAll<HTMLElement>('[data-role="recent-number"]')
-  const numbers: number[] = []
+function scrapeRecentNumbers(): { recent: number[]; history: number[] } {
+  const drawer = deepQuery(document, '[data-role="statistic-drawer"]')
+  const scope: ParentNode = drawer ?? document
+  const statisticsContainers = deepQueryAll(scope, '[data-role="statistics"]')
+  const recentNumberContainers = deepQueryAll(scope, '[data-role="recent-number"], [data-role^="recent-number-"]')
+  const recent: number[] = []
+  const historyNumbers: number[] = []
 
-  for (const container of containers) {
-    const span = container.querySelector<HTMLElement>('span.value--dd5c7')
-    const raw = span?.textContent?.trim()
+  for (const container of statisticsContainers) {
+    const raw = container.textContent?.trim()
     if (!raw) continue
-    const parsed = Number(raw)
-    if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 36) {
-      numbers.push(parsed)
+
+    historyNumbers.push(...extractRouletteNumbersFromText(raw))
+  }
+
+  for (const container of recentNumberContainers.slice(0, 12)) {
+    const raw = container.textContent?.trim()
+    if (!raw) continue
+
+    const [value] = extractRouletteNumbersFromText(raw)
+    if (typeof value === 'number') {
+      recent.push(value)
     }
   }
 
-  return numbers
+  return {
+    recent: recent,
+    history: historyNumbers.slice(0, 500)
+  }
 }
 
 function syncRecentNumbers(): void {
-  const numbers = scrapeRecentNumbers()
-  const signature = numbers.join(',')
+  const { recent, history } = scrapeRecentNumbers()
+  const signature = `${recent.join(',')}::${history.join(',')}`
   if (signature === lastRecentNumbersSignature) return
   lastRecentNumbersSignature = signature
-  chrome.storage.local.set({ evolutionRecentNumbers: numbers })
-}
-
-function scrapeEvolutionTableName(): string | null {
-  const tableName = deepQuery(document, '[data-role="table-name"]')?.textContent?.trim()
-  return tableName && tableName.length > 0 ? tableName : null
-}
-
-function syncEvolutionTableName(): void {
-  const tableName = scrapeEvolutionTableName()
-  if (!tableName || tableName === lastTableNameSignature) return
-  lastTableNameSignature = tableName
-  chrome.storage.local.set({ evolutionTableName: tableName })
+  chrome.storage.local.set({
+    evolutionRecentNumbers: recent,
+    evolutionRecentHistory: history
+  })
 }
 
 function initEvolutionChipCapture(): void {
@@ -1637,7 +1706,6 @@ function initEvolutionChipCapture(): void {
     syncRebetVisible()
     syncBettingOpen()
     syncRecentNumbers()
-    syncEvolutionTableName()
   })
 
   observer.observe(root, {
@@ -1654,7 +1722,6 @@ function initEvolutionChipCapture(): void {
       syncRebetVisible()
       syncBettingOpen()
       syncRecentNumbers()
-      syncEvolutionTableName()
     },
     { once: true }
   )
@@ -1662,7 +1729,6 @@ function initEvolutionChipCapture(): void {
   syncRebetVisible()
   syncBettingOpen()
   syncRecentNumbers()
-  syncEvolutionTableName()
 }
 
 initEvolutionChipCapture()

@@ -31,6 +31,20 @@ import { GameClassSwitcher, type GameClassView } from './components/shared/game-
 import { MainHeader } from './components/shared/header'
 import { TennisWorkspace } from './components/tennis/tennis-workspace'
 import { getNetTone } from './lib/formatters'
+import {
+  getDefaultRouletteResultEndpointConfig,
+  normalizeRouletteResultEndpointConfig,
+  resolveRouletteResultEndpointUrl,
+  type RouletteResultEndpointConfig
+} from './lib/rouletteSpinResults'
+import {
+  getDefaultRouletteLobbyHistoriesEndpointConfig,
+  normalizeRouletteLobbyHistoriesCapture,
+  normalizeRouletteLobbyHistoriesEndpointConfig,
+  resolveRouletteLobbyHistoriesEndpointUrl,
+  type RouletteLobbyHistoriesCapture,
+  type RouletteLobbyHistoriesEndpointConfig
+} from '../lib/rouletteLobbyHistories'
 
 const INITIAL_STATUS: PanelStatus = { connected: false, message: 'Checking the active tab...', site: null }
 
@@ -51,11 +65,23 @@ function sameNumbers(left: readonly number[], right: readonly number[]): boolean
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
+function sameEndpointConfig(
+  left: RouletteResultEndpointConfig | RouletteLobbyHistoriesEndpointConfig,
+  right: RouletteResultEndpointConfig | RouletteLobbyHistoriesEndpointConfig
+): boolean {
+  return left.baseUrl === right.baseUrl && left.endpoint === right.endpoint
+}
+
 const App = () => {
   const [stats, setStats] = useState<StoredData>(EMPTY_STORED_DATA)
   const [status, setStatus] = useState<PanelStatus>(INITIAL_STATUS)
   const [simulated, setSimulated] = useState<boolean>(false)
   const [devServerPort, setDevServerPort] = useState<number>(3000)
+  const [rouletteResultEndpointConfig, setRouletteResultEndpointConfig] = useState<RouletteResultEndpointConfig>(
+    getDefaultRouletteResultEndpointConfig(3000)
+  )
+  const [rouletteLobbyHistoriesEndpointConfig, setRouletteLobbyHistoriesEndpointConfig] =
+    useState<RouletteLobbyHistoriesEndpointConfig>(getDefaultRouletteLobbyHistoriesEndpointConfig(3000))
   const [virtualBankroll, setVirtualBankroll] = useState<VirtualBankrollState>(EMPTY_VIRTUAL_BANKROLL)
   const [rouletteStats, setRouletteStats] = useState<RouletteStoredData>(EMPTY_ROULETTE_STORED_DATA)
   const [tennisStats, setTennisStats] = useState<TennisStoredData>(EMPTY_TENNIS_STORED_DATA)
@@ -63,13 +89,15 @@ const App = () => {
   const [evolutionRebetVisible, setEvolutionRebetVisible] = useState<boolean>(false)
   const [evolutionBettingOpen, setEvolutionBettingOpen] = useState<boolean>(false)
   const [evolutionRecentNumbers, setEvolutionRecentNumbers] = useState<number[]>([])
+  const [evolutionRecentHistory, setEvolutionRecentHistory] = useState<number[]>([])
   const [evolutionTableState, setEvolutionTableState] = useState<TableState | null>(null)
   const [evolutionTableName, setEvolutionTableName] = useState<string | null>(null)
   const [evolutionLobbyHistories, setEvolutionLobbyHistories] = useState<EvolutionLobbyHistory[]>([])
+  const [evolutionLobbyHistoriesCapture, setEvolutionLobbyHistoriesCapture] =
+    useState<RouletteLobbyHistoriesCapture | null>(null)
   const [activeGameClass, setActiveGameClass] = useState<GameClassView>('roulette')
   const [showSettings, setShowSettings] = useState(false)
   // ─── loaders ──────────────────────────────────────────────────────────────
-  //
 
   const loadStats = () => {
     chrome.storage.local.get(['casinoResults', 'virtualBankroll'], (data) => {
@@ -82,6 +110,31 @@ const App = () => {
       startTransition(() => {
         const nextPort = getStoredPort(data.devServerPort)
         setDevServerPort((cur) => (cur === nextPort ? cur : nextPort))
+      })
+    })
+  }
+
+  const loadRouletteResultEndpointConfig = () => {
+    chrome.storage.local.get(['devServerPort', 'rouletteResultEndpointConfig'], (data) => {
+      startTransition(() => {
+        const nextPort = getStoredPort(data.devServerPort)
+        const nextConfig = normalizeRouletteResultEndpointConfig(data.rouletteResultEndpointConfig, nextPort)
+        setRouletteResultEndpointConfig((current) => (sameEndpointConfig(current, nextConfig) ? current : nextConfig))
+      })
+    })
+  }
+
+  const loadRouletteLobbyHistoriesEndpointConfig = () => {
+    chrome.storage.local.get(['devServerPort', 'rouletteLobbyHistoriesEndpointConfig'], (data) => {
+      startTransition(() => {
+        const nextPort = getStoredPort(data.devServerPort)
+        const nextConfig = normalizeRouletteLobbyHistoriesEndpointConfig(
+          data.rouletteLobbyHistoriesEndpointConfig,
+          nextPort
+        )
+        setRouletteLobbyHistoriesEndpointConfig((current) =>
+          sameEndpointConfig(current, nextConfig) ? current : nextConfig
+        )
       })
     })
   }
@@ -111,21 +164,30 @@ const App = () => {
         'evolutionRebetVisible',
         'evolutionBettingOpen',
         'evolutionRecentNumbers',
+        'evolutionRecentHistory',
         'evolutionTableState',
         'evolutionTableName',
-        'evolutionLobbyHistories'
+        'evolutionLobbyHistories',
+        'evolutionLobbyHistoriesCapture'
       ],
       (data) => {
         const chips = Array.isArray(data.evolutionChips)
           ? data.evolutionChips.filter((v: unknown) => typeof v === 'number' && v > 0)
           : []
-        const recentNumbers = normalizeEvolutionRecentNumbers(data.evolutionRecentNumbers)
+        const recentNumbers = normalizeEvolutionRecentNumbers(data.evolutionRecentNumbers).slice(0, 500)
+        const recentHistory = Array.isArray(data.evolutionRecentHistory)
+          ? data.evolutionRecentHistory.filter(
+              (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 36
+            ).slice(0, 500)
+          : []
         const lobbyHistories = normalizeEvolutionLobbyHistories(data.evolutionLobbyHistories)
         const tableName =
           typeof data.evolutionTableName === 'string' && data.evolutionTableName.trim().length > 0
             ? data.evolutionTableName.trim()
             : null
         const activeTableRecentNumbers = getEvolutionRecentNumbersForTable(recentNumbers, lobbyHistories, tableName)
+        const lobbyHistoriesCapture = normalizeRouletteLobbyHistoriesCapture(data.evolutionLobbyHistoriesCapture)
+        const lobbyHistoriesSignature = JSON.stringify(lobbyHistories)
         startTransition(() => {
           setEvolutionChips((prev) => {
             const next = chips as number[]
@@ -133,12 +195,39 @@ const App = () => {
           })
           setEvolutionRebetVisible(data.evolutionRebetVisible === true)
           setEvolutionBettingOpen(data.evolutionBettingOpen === true)
-          setEvolutionRecentNumbers((prev) => (sameNumbers(prev, activeTableRecentNumbers) ? prev : activeTableRecentNumbers))
+          setEvolutionRecentNumbers((previous) =>
+            sameNumbers(previous, activeTableRecentNumbers) ? previous : activeTableRecentNumbers
+          )
+          setEvolutionRecentHistory(recentHistory as number[])
           setEvolutionTableState(
             typeof data.evolutionTableState === 'string' ? (data.evolutionTableState as TableState) : null
           )
           setEvolutionTableName(tableName)
           setEvolutionLobbyHistories(lobbyHistories)
+          setEvolutionLobbyHistoriesCapture((prev) => {
+            if (lobbyHistoriesCapture) {
+              return lobbyHistoriesCapture
+            }
+
+            if (lobbyHistories.length === 0) {
+              return null
+            }
+
+            const prevSignature = prev ? JSON.stringify(prev.histories) : ''
+            if (prevSignature === lobbyHistoriesSignature) {
+              return prev
+            }
+
+            return {
+              histories: lobbyHistories.map(({ tableId, numbers }) => ({
+                tableId,
+                numbers: [...numbers]
+              })),
+              pageUrl: '',
+              captureUrl: '',
+              timestamp: Date.now()
+            }
+          })
         })
       }
     )
@@ -214,6 +303,33 @@ const App = () => {
     })
   }, [])
 
+  const saveRouletteResultEndpointConfig = useCallback((config: RouletteResultEndpointConfig) => {
+    const fallback = getDefaultRouletteResultEndpointConfig(devServerPort)
+    const nextConfig: RouletteResultEndpointConfig = {
+      baseUrl: config.baseUrl.trim() || fallback.baseUrl,
+      endpoint: config.endpoint.trim() || fallback.endpoint
+    }
+
+    chrome.storage.local.set({ rouletteResultEndpointConfig: nextConfig }, () => {
+      startTransition(() => setRouletteResultEndpointConfig(nextConfig))
+    })
+  }, [devServerPort])
+
+  const saveRouletteLobbyHistoriesEndpointConfig = useCallback(
+    (config: RouletteLobbyHistoriesEndpointConfig) => {
+      const fallback = getDefaultRouletteLobbyHistoriesEndpointConfig(devServerPort)
+      const nextConfig: RouletteLobbyHistoriesEndpointConfig = {
+        baseUrl: config.baseUrl.trim() || fallback.baseUrl,
+        endpoint: config.endpoint.trim() || fallback.endpoint
+      }
+
+      chrome.storage.local.set({ rouletteLobbyHistoriesEndpointConfig: nextConfig }, () => {
+        startTransition(() => setRouletteLobbyHistoriesEndpointConfig(nextConfig))
+      })
+    },
+    [devServerPort]
+  )
+
   const enableVirtualBankroll = useCallback(
     (seedBalance: number, baseBetAmount: number) => {
       persistVirtualBankroll({
@@ -271,6 +387,8 @@ const App = () => {
   useEffect(() => {
     loadStats()
     loadDevServerPort()
+    loadRouletteResultEndpointConfig()
+    loadRouletteLobbyHistoriesEndpointConfig()
     loadVirtualBankroll()
     loadRouletteResults()
     loadTennisResults()
@@ -280,6 +398,10 @@ const App = () => {
       if (namespace !== 'local') return
       if (changes.casinoResults) loadStats()
       if (changes.devServerPort) loadDevServerPort()
+      if (changes.devServerPort || changes.rouletteResultEndpointConfig) loadRouletteResultEndpointConfig()
+      if (changes.devServerPort || changes.rouletteLobbyHistoriesEndpointConfig) {
+        loadRouletteLobbyHistoriesEndpointConfig()
+      }
       if (changes.virtualBankroll) loadVirtualBankroll()
       if (changes.rouletteResults) loadRouletteResults()
       if (changes.tennisResults) loadTennisResults()
@@ -288,9 +410,11 @@ const App = () => {
         changes.evolutionRebetVisible ||
         changes.evolutionBettingOpen ||
         changes.evolutionRecentNumbers ||
+        changes.evolutionRecentHistory ||
         changes.evolutionTableState ||
         changes.evolutionTableName ||
-        changes.evolutionLobbyHistories
+        changes.evolutionLobbyHistories ||
+        changes.evolutionLobbyHistoriesCapture
       ) {
         loadEvolutionChips()
       }
@@ -401,6 +525,15 @@ const App = () => {
     ]
   )
 
+  const rouletteResultEndpointUrl = useMemo(
+    () => resolveRouletteResultEndpointUrl(rouletteResultEndpointConfig),
+    [rouletteResultEndpointConfig]
+  )
+  const rouletteLobbyHistoriesEndpointUrl = useMemo(
+    () => resolveRouletteLobbyHistoriesEndpointUrl(rouletteLobbyHistoriesEndpointConfig),
+    [rouletteLobbyHistoriesEndpointConfig]
+  )
+
   // ─── render ────────────────────────────────────────────────────────────────
 
   return (
@@ -438,9 +571,16 @@ const App = () => {
             evolutionRebetVisible={evolutionRebetVisible}
             evolutionBettingOpen={evolutionBettingOpen}
             evolutionRecentNumbers={evolutionRecentNumbers}
+            evolutionRecentHistory={evolutionRecentHistory}
             evolutionTableState={evolutionTableState}
             evolutionTableName={evolutionTableName}
             evolutionLobbyHistories={evolutionLobbyHistories}
+            rouletteResultEndpointConfig={rouletteResultEndpointConfig}
+            rouletteResultEndpointUrl={rouletteResultEndpointUrl}
+            rouletteLobbyHistoriesEndpointConfig={rouletteLobbyHistoriesEndpointConfig}
+            rouletteLobbyHistoriesEndpointUrl={rouletteLobbyHistoriesEndpointUrl}
+            saveRouletteResultEndpointConfig={saveRouletteResultEndpointConfig}
+            saveRouletteLobbyHistoriesEndpointConfig={saveRouletteLobbyHistoriesEndpointConfig}
             onReset={clearRouletteResults}
           />
         ) : (

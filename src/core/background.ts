@@ -161,24 +161,18 @@ async function getTabWithUrl(tabId: number, fallback?: chrome.tabs.Tab): Promise
   }
 }
 
-async function closeSidePanelForTab(tabId: number): Promise<void> {
-  if (typeof chrome.sidePanel.close !== 'function') {
-    return
-  }
-
-  try {
-    await chrome.sidePanel.close({ tabId })
-  } catch (error) {
-    console.debug('Failed to close side panel:', error)
-  }
-}
-
 async function updateSidePanel(tabId: number, url?: string | null): Promise<void> {
   const site = getSupportedSite(url)
 
   if (!site) {
     await chrome.sidePanel.setOptions({ tabId, enabled: false })
-    await closeSidePanelForTab(tabId)
+    if (typeof chrome.sidePanel.close === 'function') {
+      try {
+        await chrome.sidePanel.close({ tabId })
+      } catch (error) {
+        console.debug('Failed to close side panel:', error)
+      }
+    }
     return
   }
 
@@ -231,34 +225,44 @@ async function syncActiveTabStatus(): Promise<void> {
   await syncTabStatus(activeTab.id, activeTab)
 }
 
-async function configureSidePanelDefaults(): Promise<void> {
-  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
-  await chrome.sidePanel.setOptions({ path: SIDE_PANEL_PATH, enabled: false })
+function enableActionClickSidePanel(): void {
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((error) => {
+    console.error('Failed to enable action-click side panel behavior:', error)
+  })
 }
 
-async function initializeSidePanel(): Promise<void> {
-  try {
-    await configureSidePanelDefaults()
-    await syncActiveTabStatus()
-  } catch (error) {
-    console.error('Failed to initialize side panel:', error)
-  }
-}
-
-chrome.action.onClicked.addListener((clickedTab) => {
+chrome.action.onClicked.addListener(async (clickedTab) => {
   if (!clickedTab.id) {
     return
   }
 
-  void syncTabStatus(clickedTab.id, clickedTab)
+  const tab = await getTabWithUrl(clickedTab.id, clickedTab)
+  if (!tab) {
+    return
+  }
+
+  try {
+    await updateSidePanel(tab.id!, tab.url)
+    broadcastUrlStatus(tab)
+
+    if (!getSupportedSite(tab.url)) {
+      return
+    }
+
+    await chrome.sidePanel.open({ tabId: tab.id! })
+  } catch (error) {
+    console.error('Failed to open side panel:', error)
+  }
 })
 
 chrome.runtime.onInstalled.addListener(() => {
-  void initializeSidePanel()
+  enableActionClickSidePanel()
+  void syncActiveTabStatus()
 })
 
 chrome.runtime.onStartup.addListener(() => {
-  void initializeSidePanel()
+  enableActionClickSidePanel()
+  void syncActiveTabStatus()
 })
 
 chrome.tabs.onUpdated.addListener(async (tabId: number, info: chrome.tabs.OnUpdatedInfo, tab: chrome.tabs.Tab) => {
@@ -350,17 +354,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             missed.push(num)
             console.warn(`[WW] Bet spot ${num} missed — ${result.error ?? 'unknown error'}`)
           }
-          await new Promise((r) => setTimeout(r, 140))
+          await new Promise((r) => setTimeout(r, 135))
         }
-
-        console.log(`[EVO] Placed: ${placed}`)
 
         // ── Retry pass — reattempt any missed spots up to 3 times ─────────────
         for (let attempt = 1; attempt <= 3 && missed.length > 0; attempt++) {
           const toRetry = [...missed]
           missed = []
-          await new Promise((r) => setTimeout(r, 300))
-          console.log(`[EVO] retry pass ${attempt} — ${toRetry.length} spots`)
+          await new Promise((r) => setTimeout(r, 180))
           for (const num of toRetry) {
             const result = await trustedClickBySelector(activeTab.id, `[data-bet-spot-id="${num}"]`)
             if (result.ok) {
@@ -370,7 +371,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
               missed.push(num)
               console.warn(`[EVO] retry ${attempt} failed spot ${num} — ${result.error ?? 'unknown error'}`)
             }
-            await new Promise((r) => setTimeout(r, 150))
+            await new Promise((r) => setTimeout(r, 135))
           }
         }
 
@@ -386,7 +387,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             console.warn(`[WW] Double click ${i + 1}/${doubleCount} failed: ${dr.error}`)
           }
           // Give Evolution's animation time to register before the next double.
-          await new Promise((r) => setTimeout(r, 220))
+          await new Promise((r) => setTimeout(r, 135))
         }
 
         sendResponse({ ok: placed.length > 0, placed, missed, doublesApplied })

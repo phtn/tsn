@@ -67,7 +67,7 @@ export const RouletteStats = ({
         <Stat>
           <div className='flex items-start justify-between'>
             <span
-              className={cn('text-[0.62rem] uppercase tracking-[0.2em] text-slate-400', {
+              className={cn('text-[0.62rem] uppercase tracking-widest text-slate-400', {
                 'font-medium text-indigo-300 opacity-100': inputMode === 'base'
               })}>
               {inputMode === 'base' ? `${baseUnit * 272}` : `unit = ${baseUnit.toFixed(2)}`}
@@ -103,7 +103,7 @@ export const RouletteStats = ({
         </Stat>
         <Stat>
           <p className=' text-slate-400 text-[0.62rem] tracking-[0.2em] uppercase whitespace-nowrap'>
-            Take &middot; <span className=' text-emerald-400 tracking-[0.2em]'>{winAmount}</span>
+            Take &middot; <span className=' text-emerald-400 tracking-widest'>{winAmount}</span>
           </p>
           <p className='mt-1.5 font-okx font-normal text-yellow-300 text-lg'>{fmtAmt(winAmount - totalStaked)}</p>
         </Stat>
@@ -133,7 +133,7 @@ interface StatsProps {
 const Stat = ({ children, cols = 2 }: StatsProps) => {
   return (
     <div
-      className={cn('rounded-xs border-[0.33px] border-white/15 bg-white/10 backdrop-blur-md p-1.25 col-span-2', {
+      className={cn('rounded-sm border-[0.33px] border-white/15 bg-white/8 backdrop-blur-md p-1.25 col-span-2', {
         'col-span-1': cols === 1
       })}>
       {children}
