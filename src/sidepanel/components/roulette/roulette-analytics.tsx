@@ -1,5 +1,6 @@
 import type { LobbyTableHistory, RouletteSpinResult } from '@/src/types/roulette'
-import { FC, type ReactNode, useMemo } from 'react'
+import { FC, type ReactNode, useEffect, useMemo, useRef } from 'react'
+import { postJsonToEndpoint } from '../../../lib/relayEndpoints'
 import {
   BLACK_NUMBERS,
   getKimQuadrantsContainingPair,
@@ -27,7 +28,8 @@ type AnalyticsProps = {
   evolutionRecentHistory?: number[]
   onReset?: () => void
   results: RouletteSpinResult[]
-  latestSpin: RouletteSpinResult
+  latestSpin: RouletteSpinResult | null
+  rouletteResultEndpointUrl?: string
 }
 
 interface SignalSummary {
@@ -47,8 +49,73 @@ interface SignalSummary {
 
 type SignalOutcome = 'W' | 'L' | '0'
 
+type NumberState = {
+  index: number
+  number: number
+  highlighted: boolean
+  leadingSignal: boolean
+  winning: boolean
+  losing: boolean
+}
+
+type AnalyticsOutcomeState = {
+  index: number
+  displayIndex: number
+  number: number | null
+}
+
 function isRepeatSignalPair(first: number, second: number) {
   return first !== 0 && first === second
+}
+
+function resolveRouletteAnalyticsEndpointUrl(rouletteResultEndpointUrl?: string) {
+  const endpoint = rouletteResultEndpointUrl?.trim()
+  if (!endpoint) {
+    return ''
+  }
+
+  try {
+    const url = new URL(endpoint)
+    url.pathname = '/api/bets/r3'
+    url.search = ''
+    url.hash = ''
+    return url.toString()
+  } catch {
+    return '/api/bets/r3'
+  }
+}
+
+function mapNumberStates(
+  numbers: readonly number[],
+  indexOffset: number,
+  highlightedIndexes: ReadonlySet<number>,
+  leadingSignalIndexes: ReadonlySet<number>,
+  winningIndexes: ReadonlySet<number>,
+  losingIndexes: ReadonlySet<number>
+): NumberState[] {
+  return numbers.map((number, index) => {
+    const displayIndex = index + indexOffset
+    return {
+      index: displayIndex,
+      number,
+      highlighted: highlightedIndexes.has(displayIndex),
+      leadingSignal: leadingSignalIndexes.has(displayIndex),
+      winning: winningIndexes.has(displayIndex),
+      losing: losingIndexes.has(displayIndex)
+    }
+  })
+}
+
+function mapOutcomeStates(
+  indexes: readonly number[],
+  allNumbersFromStart: readonly number[],
+  displayCount: number
+): AnalyticsOutcomeState[] {
+  return indexes.map((index) => ({
+    index,
+    displayIndex: displayCount - 1 - index,
+    number: allNumbersFromStart[index] ?? null
+  }))
 }
 
 function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalSummary {
@@ -196,7 +263,8 @@ export const Analytics: FC<AnalyticsProps> = ({
   evolutionRecentNumbers = [],
   evolutionRecentHistory = [],
   onReset,
-  latestSpin
+  latestSpin,
+  rouletteResultEndpointUrl
 }) => {
   const winningNumbers = results
     .map((result) => result.winningNumber)
@@ -225,6 +293,128 @@ export const Analytics: FC<AnalyticsProps> = ({
     const displayCount = recentNumbers.length + historyNumbers.length
     return new Set(signalSummary.losingIndexes.map((index) => displayCount - 1 - index))
   }, [historyNumbers.length, recentNumbers.length, signalSummary.losingIndexes])
+  const signalOverviewValues = useMemo(() => {
+    const resolvedSignals = signalSummary.wins + signalSummary.losses
+    const pendingSignals = Math.max(0, signalSummary.signalsFound - resolvedSignals)
+    return {
+      totalCaptured: allNumbersFromStart.length,
+      signalsFound: signalSummary.signalsFound,
+      wins: signalSummary.wins,
+      losses: signalSummary.losses,
+      zeroLosses: signalSummary.zeroLosses,
+      bestWinStreak: signalSummary.bestWinStreak,
+      currentWinStreak: signalSummary.currentWinStreak,
+      winStreaks: [...signalSummary.winStreaks],
+      series: [...signalSummary.series],
+      resolvedSignals,
+      pendingSignals,
+      winPct: resolvedSignals > 0 ? (signalSummary.wins / resolvedSignals) * 100 : 0,
+      lossPct: resolvedSignals > 0 ? (signalSummary.losses / resolvedSignals) * 100 : 0
+    }
+  }, [allNumbersFromStart.length, signalSummary])
+  const analyticsEndpointUrl = useMemo(
+    () => resolveRouletteAnalyticsEndpointUrl(rouletteResultEndpointUrl),
+    [rouletteResultEndpointUrl]
+  )
+  const analyticsRelayPayload = useMemo(() => {
+    const displayCount = recentNumbers.length + historyNumbers.length
+    const historyIndexOffset = recentNumbers.length + historyConnectorCount
+
+    return {
+      type: 'roulette.analytics',
+      schemaVersion: 1,
+      emittedAt: new Date().toISOString(),
+      latestSpin: latestSpin
+        ? {
+            id: latestSpin.id,
+            winningNumber: latestSpin.winningNumber,
+            timestamp: latestSpin.timestamp,
+            updatedAt: latestSpin.updatedAt
+          }
+        : null,
+      mostRecent: {
+        numbers: [...mostRecentNumbers],
+        items: mapNumberStates(
+          mostRecentNumbers,
+          0,
+          highlightedSignalIndexes,
+          highlightedLeadingSignalIndexes,
+          highlightedWinningIndexes,
+          highlightedLosingIndexes
+        )
+      },
+      historyNumbers: {
+        numbers: [...displayedHistoryNumbers],
+        indexOffset: historyIndexOffset,
+        items: mapNumberStates(
+          displayedHistoryNumbers,
+          historyIndexOffset,
+          highlightedSignalIndexes,
+          highlightedLeadingSignalIndexes,
+          highlightedWinningIndexes,
+          highlightedLosingIndexes
+        )
+      },
+      signalOverview: signalOverviewValues,
+      analytics: {
+        allNumbersFromStart: [...allNumbersFromStart],
+        signalIndexes: [...signalSummary.signalIndexes],
+        leadingSignalIndexes: [...signalSummary.leadingSignalIndexes],
+        winningIndexes: [...signalSummary.winningIndexes],
+        losingIndexes: [...signalSummary.losingIndexes],
+        wins: mapOutcomeStates(signalSummary.winningIndexes, allNumbersFromStart, displayCount),
+        losses: mapOutcomeStates(signalSummary.losingIndexes, allNumbersFromStart, displayCount)
+      }
+    }
+  }, [
+    allNumbersFromStart,
+    displayedHistoryNumbers,
+    highlightedLeadingSignalIndexes,
+    highlightedLosingIndexes,
+    highlightedSignalIndexes,
+    highlightedWinningIndexes,
+    historyConnectorCount,
+    historyNumbers.length,
+    latestSpin,
+    mostRecentNumbers,
+    recentNumbers.length,
+    signalOverviewValues,
+    signalSummary.leadingSignalIndexes,
+    signalSummary.losingIndexes,
+    signalSummary.signalIndexes,
+    signalSummary.winningIndexes
+  ])
+  const analyticsRelaySignature = useMemo(
+    () =>
+      JSON.stringify({
+        mostRecentNumbers,
+        displayedHistoryNumbers,
+        signalOverviewValues,
+        winningIndexes: signalSummary.winningIndexes,
+        losingIndexes: signalSummary.losingIndexes
+      }),
+    [
+      displayedHistoryNumbers,
+      mostRecentNumbers,
+      signalOverviewValues,
+      signalSummary.losingIndexes,
+      signalSummary.winningIndexes
+    ]
+  )
+  const lastAnalyticsRelaySignatureRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!analyticsEndpointUrl || allNumbersFromStart.length === 0) {
+      return
+    }
+
+    if (lastAnalyticsRelaySignatureRef.current === analyticsRelaySignature) {
+      return
+    }
+
+    lastAnalyticsRelaySignatureRef.current = analyticsRelaySignature
+    void postJsonToEndpoint(analyticsRelayPayload, analyticsEndpointUrl, 'roulette analytics')
+  }, [allNumbersFromStart.length, analyticsEndpointUrl, analyticsRelayPayload, analyticsRelaySignature])
   const stats = useMemo(() => {
     const total = winningNumbers.length
     if (total === 0) {

@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useState } from 'react'
 import { deriveVirtualBankroll } from '../lib/virtual-bankroll'
 import {
   EMPTY_STORED_DATA,
@@ -33,12 +33,10 @@ import {
   type RouletteResultEndpointConfig
 } from './lib/rouletteSpinResults'
 import {
-  buildRouletteLobbyHistoriesPayload,
   getDefaultRouletteLobbyHistoriesEndpointConfig,
   normalizeRouletteLobbyHistoriesCapture,
   normalizeRouletteLobbyHistoriesEndpointConfig,
   resolveRouletteLobbyHistoriesEndpointUrl,
-  sendRouletteLobbyHistories,
   type RouletteLobbyHistoriesCapture,
   type RouletteLobbyHistoriesEndpointConfig
 } from '../lib/rouletteLobbyHistories'
@@ -89,7 +87,6 @@ const App = () => {
     useState<RouletteLobbyHistoriesCapture | null>(null)
   const [activeGameClass, setActiveGameClass] = useState<GameClassView>('roulette')
   const [showSettings, setShowSettings] = useState(false)
-  const lastLobbyHistoriesRelaySignatureRef = useRef('')
   // ─── loaders ──────────────────────────────────────────────────────────────
 
   const loadStats = () => {
@@ -528,21 +525,6 @@ const App = () => {
     () => resolveRouletteLobbyHistoriesEndpointUrl(rouletteLobbyHistoriesEndpointConfig),
     [rouletteLobbyHistoriesEndpointConfig]
   )
-
-  useEffect(() => {
-    if (!evolutionLobbyHistoriesCapture || evolutionLobbyHistoriesCapture.histories.length === 0) {
-      return
-    }
-
-    const relaySignature = `${rouletteLobbyHistoriesEndpointUrl}::${JSON.stringify(evolutionLobbyHistoriesCapture)}`
-    if (lastLobbyHistoriesRelaySignatureRef.current === relaySignature) {
-      return
-    }
-
-    lastLobbyHistoriesRelaySignatureRef.current = relaySignature
-    const payload = buildRouletteLobbyHistoriesPayload(evolutionLobbyHistoriesCapture)
-    void sendRouletteLobbyHistories(payload, rouletteLobbyHistoriesEndpointUrl)
-  }, [evolutionLobbyHistoriesCapture, rouletteLobbyHistoriesEndpointUrl])
 
   // ─── render ────────────────────────────────────────────────────────────────
 

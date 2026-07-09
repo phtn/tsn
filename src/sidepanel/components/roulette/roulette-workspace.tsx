@@ -157,6 +157,7 @@ export function RouletteWorkspace({
         onReset={handleReset}
         results={stats.results}
         latestSpin={latestSpin}
+        rouletteResultEndpointUrl={rouletteResultEndpointUrl}
       />
       <div className='mt-4 flex items-start gap-4'>
         {relaySettingsVisible ? (
