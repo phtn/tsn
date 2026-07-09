@@ -875,7 +875,7 @@ export function RouletteVirtualBoard({
             ) : null}
           </div>
 
-          <div className='mt-2'>
+          <div className='mt-0'>
             <ChipStack
               isTracking={isTracking}
               chipsDetected={evolutionChips}

@@ -1,6 +1,6 @@
 {
-  "name": "watchful-wind",
-  "version": "0.3.0",
+  "name": "tsn",
+  "version": "3.6.9",
   "description": "Watch game result tracker extension",
   "scripts": {
     "build": "node build.mjs",

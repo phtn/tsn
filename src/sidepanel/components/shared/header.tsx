@@ -1,4 +1,4 @@
-import { cn } from '@/src/lib/utils'
+import { Icon } from '@/src/lib/icons'
 import { GameResult, PanelStatus, ResultSummary } from '../../../types'
 import { GameClassView } from './game-class-switcher'
 
@@ -39,11 +39,11 @@ const GAME_CLASS_OPTIONS: Array<GameClassOption> = [
   }
 ]
 export const MainHeader = ({ status, stats, latestGame, onGameClassChange, gameClass }: HeaderProps) => {
-  const currentGameClassLabel = GAME_CLASS_OPTIONS.find((option) => option.value === gameClass)?.label ?? gameClass
-  const currentGameClass = GAME_CLASS_OPTIONS.find((option) => option.value === gameClass) ?? {
-    icon: 'url(./icons/originals.svg)',
-    style: 'rotate-45 bg-white'
-  }
+  // const currentGameClassLabel = GAME_CLASS_OPTIONS.find((option) => option.value === gameClass)?.label ?? gameClass
+  // const currentGameClass = GAME_CLASS_OPTIONS.find((option) => option.value === gameClass) ?? {
+  //   icon: 'url(./icons/originals.svg)',
+  //   style: 'rotate-45 bg-white'
+  // }
 
   // const gcmap: Record<GameClassView, { url: string; style: string }> = {
   //   originals: { url: 'url(./icons/originals.svg)', style: 'bg-white rotate-45' },
@@ -66,7 +66,7 @@ export const MainHeader = ({ status, stats, latestGame, onGameClassChange, gameC
                     : 'https://res.cloudinary.com/dx0heqhhe/image/upload/v1774084886/88_vo2l7g.svg'
                 }
                 alt='369'
-                className='h-12 w-12 aspect-square'
+                className='h-9 w-9 aspect-square'
               />
             </div>
             <div>
@@ -75,7 +75,18 @@ export const MainHeader = ({ status, stats, latestGame, onGameClassChange, gameC
               </h1>
             </div>
           </div>
-          <div className='flex items-center space-x-4'>
+          <h2 id='table-name' className='mt-px font-display font-medium text-sm leading-none text-white'>
+            {/*{status.} - {tableId ? rtnMap[tableId] : 'no id'}*/}
+          </h2>
+          <div className='flex items-center space-x-0 h-4.5'>
+            <Icon name='evolution' className='size-4 opacity-40 rotate-180' />
+            <p
+              id='provider'
+              className='font-display text-xs italic uppercase tracking-[0.2em] leading-none text-gray-200/80'>
+              evolution
+            </p>
+          </div>
+          {/*<div className='flex items-center space-x-4'>
             <div
               className={`flex items-center gap-2 rounded-full border px-1.5 py-0.5 text-[0.55rem] font-semibold uppercase tracking-[0.22em] ${
                 status.connected
@@ -98,6 +109,7 @@ export const MainHeader = ({ status, stats, latestGame, onGameClassChange, gameC
                 }}></span>
             </button>
           </div>
+          */}
         </div>
       </div>
     </header>

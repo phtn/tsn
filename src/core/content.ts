@@ -1,7 +1,6 @@
 import { applyPaperBankrollToRound } from '../lib/paper-bankroll'
 import { resolveFinancialOutcome } from '../lib/result-outcome'
 import type { RouletteLobbyHistoriesCapture } from '../lib/rouletteLobbyHistories'
-import { extractTennisEvents, hasTennisSurface } from '../lib/tennis/scrape'
 import {
   normalizeStoredData,
   normalizeVirtualBankroll,
@@ -9,7 +8,7 @@ import {
   type GameResult,
   type SupportedGameKey
 } from '../types'
-import type { Bet88, Bet88Dice, Bet88Keno, Bet88Limbo, Bet88Mines } from '../types/bet88'
+import type { Bet88 } from '../types/bet88'
 import {
   normalizeRouletteStoredData,
   summarizeRouletteResults,
@@ -18,16 +17,8 @@ import {
   type PragmaticPlayMessage,
   type RouletteSpinResult
 } from '../types/roulette'
-import type {
-  Stake,
-  StakeDice,
-  StakeKeno,
-  StakeLimbo,
-  StakeMinesBet,
-  StakeMinesCashOut,
-  StakeMinesNext
-} from '../types/stake'
-import { summarizeTennisEvents, type TennisEvent } from '../types/tennis'
+import type { Stake } from '../types/stake'
+// import { summarizeTennisEvents, type TennisEvent } from '../types/tennis'
 import { getSupportedSite } from './siteConfig'
 
 interface InterceptedNetworkPayload {
@@ -45,298 +36,32 @@ type StakeAction = 'bet' | 'roll' | 'next' | 'cashout'
 type Bet88Action = 'bet' | 'play'
 type CapturedRouletteMessage = EvoMessage | PragmaticPlayMessage
 
-let tennisSyncTimer: number | null = null
-let lastTennisSignature = ''
 let lastChipSignature = ''
 let lastRecentNumbersSignature = ''
 let lastLobbyHistoriesSignature = ''
 
 const script = document.createElement('script')
-script.src = chrome.runtime.getURL('dist/injected.js')
+const manifest = chrome.runtime.getManifest() as {
+  content_scripts?: Array<{ js?: string[] }>
+}
+const contentScriptPath = manifest.content_scripts
+  ?.flatMap((contentScript) => contentScript.js ?? [])
+  .find((path) => path.endsWith('content.js'))
+const extensionAssetPrefix = contentScriptPath?.slice(0, contentScriptPath.lastIndexOf('/') + 1) ?? ''
+script.src = chrome.runtime.getURL(`${extensionAssetPrefix}injected.js`)
 script.onload = function () {
   script.remove()
 }
 ;(document.head || document.documentElement).appendChild(script)
 
-window.addEventListener('message', async (event: MessageEvent) => {
-  if (event.source !== window || event.data?.type !== 'CASINO_RESPONSE') {
-    return
-  }
-
-  const responseData = event.data.data as InterceptedNetworkPayload
-  await processCapturedPayload(responseData)
-})
-
-function extractEvoTableState(payload: InterceptedNetworkPayload): string | null {
-  const data = payload.data
-  if (!isRecord(data) || data.type !== 'roulette.tableState' || !isRecord(data.args)) return null
-  const state = data.args.state
-  if (typeof state !== 'string') return null
-  return state.toUpperCase()
-}
-
-function extractLobbyHistories(payload: InterceptedNetworkPayload): LobbyTableHistory[] | null {
-  const data = payload.data
-  if (!isRecord(data) || data.type !== 'lobby.histories' || !isRecord(data.args)) return null
-  const raw = data.args.histories
-  if (!isRecord(raw)) return null
-
-  const tables: LobbyTableHistory[] = []
-
-  for (const [tableId, tableData] of Object.entries(raw)) {
-    if (!isRecord(tableData)) continue
-    const results = tableData.results
-    if (!Array.isArray(results)) continue
-    const numbers: number[] = []
-    // results is { number: string }[][] — outer array of rounds, inner array of items
-    for (const group of results) {
-      if (!Array.isArray(group)) continue
-      for (const item of group) {
-        if (isRecord(item) && typeof item.number === 'string') {
-          const n = parseInt(item.number, 10)
-          if (Number.isInteger(n) && n >= 0 && n <= 36) numbers.push(n)
-        }
-      }
-    }
-    if (numbers.length > 0) tables.push({ tableId, numbers: numbers.slice(0, 15) })
-  }
-
-  return tables.length > 0 ? tables : null
-}
-
-async function processCapturedPayload(responseData: InterceptedNetworkPayload): Promise<void> {
-  try {
-    const tableState = extractEvoTableState(responseData)
-    if (tableState !== null) {
-      chrome.storage.local.set({ evolutionTableState: tableState })
-      return
-    }
-
-    const lobbyHistories = extractLobbyHistories(responseData)
-    if (lobbyHistories !== null) {
-      await saveLobbyHistories(lobbyHistories, responseData)
-      return
-    }
-
-    const rouletteResult = parseRouletteResult(responseData)
-    if (rouletteResult) {
-      await saveRouletteResult(rouletteResult)
-      return
-    }
-
-    const historyItems = extractBet88HistoryFeed(responseData)
-    if (historyItems) {
-      const parsed = historyItems
-        .map((item) => parseBet88HistoryItem(item, responseData.timestamp ?? Date.now()))
-        .filter((item): item is GameResult => item !== null)
-      if (parsed.length > 0) {
-        await saveGameResults(parsed)
-        return
-      }
-    }
-
-    const result = parseGameResult(responseData)
-
-    if (!result) return
-
-    await saveGameResult(result)
-  } catch (error) {
-    console.error('[WW] error processing payload:', error)
-  }
-}
-
-function isRecord(value: unknown): value is UnknownRecord {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function isSupportedGameKey(value: unknown): value is SupportedGameKey {
-  return value === 'keno' || value === 'limbo' || value === 'dice' || value === 'mines'
-}
-
-function toNumber(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value
-  }
-
-  if (typeof value === 'string') {
-    const parsed = Number(value)
-    if (Number.isFinite(parsed)) {
-      return parsed
+function extractBet88HistoryFeed(payload: InterceptedNetworkPayload): Bet88HistoryItem[] | null {
+  const candidates = [payload.data, isRecord(payload.data) ? payload.data.data : undefined]
+  for (const candidate of candidates) {
+    if (isBet88HistoryFeed(candidate)) {
+      return candidate.items
     }
   }
-
-  return undefined
-}
-
-function getStoredPort(value: unknown): number {
-  return toNumber(value) ?? 3000
-}
-
-function getStakeInputBetAmount(): number | undefined {
-  const stakeInput = document.querySelector<HTMLInputElement>('input.svelte-dka04o')
-  if (!stakeInput) {
-    return undefined
-  }
-
-  const rawValue = stakeInput.value.trim()
-  if (!rawValue) {
-    return undefined
-  }
-
-  const normalizedValue = rawValue.replace(/,/g, '')
-  const amount = toNumber(normalizedValue)
-
-  return amount !== undefined && amount > 0 ? amount : undefined
-}
-
-function isNumberArray(value: unknown): value is number[] {
-  return Array.isArray(value) && value.every((entry) => typeof entry === 'number' && Number.isFinite(entry))
-}
-
-function parseTimestamp(value: unknown): number | undefined {
-  if (typeof value !== 'string') {
-    return undefined
-  }
-
-  const timestamp = Date.parse(value)
-  return Number.isNaN(timestamp) ? undefined : timestamp
-}
-
-function isStakeBase(value: unknown): value is Stake<unknown> {
-  return (
-    isRecord(value) &&
-    typeof value.id === 'string' &&
-    typeof value.active === 'boolean' &&
-    typeof value.currency === 'string' &&
-    typeof value.amountMultiplier === 'number' &&
-    typeof value.payoutMultiplier === 'number' &&
-    typeof value.amount === 'number' &&
-    typeof value.payout === 'number' &&
-    typeof value.updatedAt === 'string' &&
-    isSupportedGameKey(value.game) &&
-    isRecord(value.user) &&
-    typeof value.user.id === 'string' &&
-    typeof value.user.name === 'string' &&
-    isRecord(value.state)
-  )
-}
-
-function isStakeKenoState(value: unknown): value is StakeKeno {
-  return (
-    isRecord(value) &&
-    typeof value.risk === 'string' &&
-    isNumberArray(value.drawnNumbers) &&
-    isNumberArray(value.selectedNumbers)
-  )
-}
-
-function isStakeLimboState(value: unknown): value is StakeLimbo {
-  return isRecord(value) && typeof value.result === 'number'
-}
-
-function isStakeDiceState(value: unknown): value is StakeDice {
-  return (
-    isRecord(value) &&
-    typeof value.result === 'number' &&
-    typeof value.target === 'number' &&
-    typeof value.condition === 'string'
-  )
-}
-
-function isStakeMinesRound(value: unknown): value is { field: number; payoutMultiplier: number } {
-  return isRecord(value) && typeof value.field === 'number' && typeof value.payoutMultiplier === 'number'
-}
-
-function isStakeMinesBetState(value: unknown): value is StakeMinesBet {
-  return isRecord(value) && Array.isArray(value.rounds) && typeof value.minesCount === 'number' && value.mines === null
-}
-
-function isStakeMinesNextState(value: unknown): value is StakeMinesNext {
-  return (
-    isRecord(value) &&
-    Array.isArray(value.rounds) &&
-    value.rounds.every(isStakeMinesRound) &&
-    typeof value.minesCount === 'number' &&
-    value.mines === null
-  )
-}
-
-function isStakeMinesCashOutState(value: unknown): value is StakeMinesCashOut {
-  return (
-    isRecord(value) &&
-    Array.isArray(value.rounds) &&
-    value.rounds.every(isStakeMinesRound) &&
-    typeof value.minesCount === 'number' &&
-    isNumberArray(value.mines)
-  )
-}
-
-function isBet88Base(value: unknown): value is Bet88<unknown> {
-  return (
-    isRecord(value) &&
-    (typeof value.roundId === 'number' || typeof value.roundId === 'string') &&
-    (typeof value.win === 'boolean' || typeof value.win === 'number') &&
-    (typeof value.active === 'boolean' || typeof value.active === 'number') &&
-    (value.multiplier === null || value.multiplier === undefined || typeof value.multiplier === 'number') &&
-    (value.winAmount === null ||
-      value.winAmount === undefined ||
-      typeof value.winAmount === 'string' ||
-      typeof value.winAmount === 'number')
-  )
-}
-
-// ── Bet88 history feed ────────────────────────────────────────────────────────
-// bet88.ph game endpoints return a paginated results list rather than a single
-// bet response. Shape: { nrOfResults: number, items: Bet88HistoryItem[] }
-
-interface Bet88HistoryItem {
-  game: string
-  roundId: number | string
-  user: string
-  currency: string
-  dateTime: string
-  betAmount: string
-  payout: string
-  multiplier: number
-}
-
-function isBet88HistoryItem(value: unknown): value is Bet88HistoryItem {
-  return (
-    isRecord(value) &&
-    typeof value.game === 'string' &&
-    (typeof value.roundId === 'number' || typeof value.roundId === 'string') &&
-    typeof value.user === 'string' &&
-    typeof value.currency === 'string' &&
-    typeof value.dateTime === 'string' &&
-    typeof value.betAmount === 'string' &&
-    typeof value.payout === 'string' &&
-    typeof value.multiplier === 'number'
-  )
-}
-
-function isBet88HistoryFeed(value: unknown): value is { nrOfResults: number; items: Bet88HistoryItem[] } {
-  return (
-    isRecord(value) &&
-    typeof value.nrOfResults === 'number' &&
-    Array.isArray(value.items) &&
-    value.items.length > 0 &&
-    isBet88HistoryItem(value.items[0])
-  )
-}
-
-function mapBet88HistoryGame(name: string): SupportedGameKey | null {
-  switch (name.toLowerCase()) {
-    case 'keno':
-      return 'keno'
-    case 'limbo':
-      return 'limbo'
-    case 'dice':
-      return 'dice'
-    case 'mines':
-      return 'mines'
-    default:
-      return null
-  }
+  return null
 }
 
 function parseBet88HistoryItem(item: Bet88HistoryItem, fallbackTimestamp: number): GameResult | null {
@@ -427,14 +152,234 @@ function parseBet88HistoryItem(item: Bet88HistoryItem, fallbackTimestamp: number
   }
 }
 
-function extractBet88HistoryFeed(payload: InterceptedNetworkPayload): Bet88HistoryItem[] | null {
-  const candidates = [payload.data, isRecord(payload.data) ? payload.data.data : undefined]
-  for (const candidate of candidates) {
-    if (isBet88HistoryFeed(candidate)) {
-      return candidate.items
+async function processCapturedPayload(responseData: InterceptedNetworkPayload): Promise<void> {
+  try {
+    const tableState = extractEvoTableState(responseData)
+    if (tableState !== null) {
+      chrome.storage.local.set({ evolutionTableState: tableState })
+      return
+    }
+
+    const lobbyHistories = extractLobbyHistories(responseData)
+    if (lobbyHistories !== null) {
+      await saveLobbyHistories(lobbyHistories, responseData)
+      return
+    }
+
+    const rouletteResult = parseRouletteResult(responseData)
+    if (rouletteResult) {
+      await saveRouletteResult(rouletteResult)
+      return
+    }
+
+    const historyItems = extractBet88HistoryFeed(responseData)
+    if (historyItems) {
+      const parsed = historyItems
+        .map((item) => parseBet88HistoryItem(item, responseData.timestamp ?? Date.now()))
+        .filter((item): item is GameResult => item !== null)
+      if (parsed.length > 0) {
+        await saveGameResults(parsed)
+        return
+      }
+    }
+
+    const result = parseGameResult(responseData)
+
+    if (!result) return
+
+    await saveGameResult(result)
+  } catch (error) {
+    console.error('[WW] error processing payload:', error)
+  }
+}
+window.addEventListener('message', async (event: MessageEvent) => {
+  if (event.source !== window || event.data?.type !== 'CASINO_RESPONSE') {
+    return
+  }
+
+  const responseData = event.data.data as InterceptedNetworkPayload
+  await processCapturedPayload(responseData)
+})
+
+function extractEvoTableState(payload: InterceptedNetworkPayload): string | null {
+  const data = payload.data
+  if (!isRecord(data) || data.type !== 'roulette.tableState' || !isRecord(data.args)) return null
+  const state = data.args.state
+  if (typeof state !== 'string') return null
+  return state.toUpperCase()
+}
+
+function extractLobbyHistories(payload: InterceptedNetworkPayload): LobbyTableHistory[] | null {
+  const data = payload.data
+  if (!isRecord(data) || data.type !== 'lobby.histories' || !isRecord(data.args)) return null
+  const raw = data.args.histories
+  if (!isRecord(raw)) return null
+
+  const tables: LobbyTableHistory[] = []
+
+  for (const [tableId, tableData] of Object.entries(raw)) {
+    if (!isRecord(tableData)) continue
+    const results = tableData.results
+    if (!Array.isArray(results)) continue
+    const numbers: number[] = []
+    // results is { number: string }[][] — outer array of rounds, inner array of items
+    for (const group of results) {
+      if (!Array.isArray(group)) continue
+      for (const item of group) {
+        if (isRecord(item) && typeof item.number === 'string') {
+          const n = parseInt(item.number, 10)
+          if (Number.isInteger(n) && n >= 0 && n <= 36) numbers.push(n)
+        }
+      }
+    }
+    if (numbers.length > 0) tables.push({ tableId, numbers: numbers.slice(0, 15) })
+  }
+
+  return tables.length > 0 ? tables : null
+}
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isSupportedGameKey(value: unknown): value is SupportedGameKey {
+  return value === 'keno' || value === 'limbo' || value === 'dice' || value === 'mines'
+}
+
+function toNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) {
+      return parsed
     }
   }
-  return null
+
+  return undefined
+}
+
+function getStoredPort(value: unknown): number {
+  return toNumber(value) ?? 3000
+}
+
+function getStakeInputBetAmount(): number | undefined {
+  const stakeInput = document.querySelector<HTMLInputElement>('input.svelte-dka04o')
+  if (!stakeInput) {
+    return undefined
+  }
+
+  const rawValue = stakeInput.value.trim()
+  if (!rawValue) {
+    return undefined
+  }
+
+  const normalizedValue = rawValue.replace(/,/g, '')
+  const amount = toNumber(normalizedValue)
+
+  return amount !== undefined && amount > 0 ? amount : undefined
+}
+
+function isNumberArray(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'number' && Number.isFinite(entry))
+}
+
+function parseTimestamp(value: unknown): number | undefined {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+
+  const timestamp = Date.parse(value)
+  return Number.isNaN(timestamp) ? undefined : timestamp
+}
+
+function isStakeBase(value: unknown): value is Stake<unknown> {
+  return (
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    typeof value.active === 'boolean' &&
+    typeof value.currency === 'string' &&
+    typeof value.amountMultiplier === 'number' &&
+    typeof value.payoutMultiplier === 'number' &&
+    typeof value.amount === 'number' &&
+    typeof value.payout === 'number' &&
+    typeof value.updatedAt === 'string' &&
+    isSupportedGameKey(value.game) &&
+    isRecord(value.user) &&
+    typeof value.user.id === 'string' &&
+    typeof value.user.name === 'string' &&
+    isRecord(value.state)
+  )
+}
+
+function isBet88Base(value: unknown): value is Bet88<unknown> {
+  return (
+    isRecord(value) &&
+    (typeof value.roundId === 'number' || typeof value.roundId === 'string') &&
+    (typeof value.win === 'boolean' || typeof value.win === 'number') &&
+    (typeof value.active === 'boolean' || typeof value.active === 'number') &&
+    (value.multiplier === null || value.multiplier === undefined || typeof value.multiplier === 'number') &&
+    (value.winAmount === null ||
+      value.winAmount === undefined ||
+      typeof value.winAmount === 'string' ||
+      typeof value.winAmount === 'number')
+  )
+}
+
+// ── Bet88 history feed ────────────────────────────────────────────────────────
+// bet88.ph game endpoints return a paginated results list rather than a single
+// bet response. Shape: { nrOfResults: number, items: Bet88HistoryItem[] }
+
+interface Bet88HistoryItem {
+  game: string
+  roundId: number | string
+  user: string
+  currency: string
+  dateTime: string
+  betAmount: string
+  payout: string
+  multiplier: number
+}
+
+function isBet88HistoryItem(value: unknown): value is Bet88HistoryItem {
+  return (
+    isRecord(value) &&
+    typeof value.game === 'string' &&
+    (typeof value.roundId === 'number' || typeof value.roundId === 'string') &&
+    typeof value.user === 'string' &&
+    typeof value.currency === 'string' &&
+    typeof value.dateTime === 'string' &&
+    typeof value.betAmount === 'string' &&
+    typeof value.payout === 'string' &&
+    typeof value.multiplier === 'number'
+  )
+}
+
+function isBet88HistoryFeed(value: unknown): value is { nrOfResults: number; items: Bet88HistoryItem[] } {
+  return (
+    isRecord(value) &&
+    typeof value.nrOfResults === 'number' &&
+    Array.isArray(value.items) &&
+    value.items.length > 0 &&
+    isBet88HistoryItem(value.items[0])
+  )
+}
+
+function mapBet88HistoryGame(name: string): SupportedGameKey | null {
+  switch (name.toLowerCase()) {
+    case 'keno':
+      return 'keno'
+    case 'limbo':
+      return 'limbo'
+    case 'dice':
+      return 'dice'
+    case 'mines':
+      return 'mines'
+    default:
+      return null
+  }
 }
 
 function isRouletteResultEntry(value: unknown): value is { number: string } {
@@ -484,74 +429,6 @@ function getNumberArray(value: unknown): number[] | undefined {
     .filter((entry): entry is number => typeof entry === 'number' && Number.isFinite(entry))
 
   return numbers.length === value.length ? numbers : undefined
-}
-
-function normalizeBet88KenoCustom(value: unknown): Bet88Keno | null {
-  if (!isRecord(value)) {
-    return null
-  }
-
-  return {
-    drawNumbers: getNumberArray(value.drawNumbers) ?? [],
-    numberOfMatches: toNumber(value.numberOfMatches) ?? 0
-  }
-}
-
-function normalizeBet88LimboCustom(value: unknown, fallbackMultiplier?: number): Bet88Limbo | null {
-  const multiplier = isRecord(value) ? (toNumber(value.multiplier) ?? fallbackMultiplier) : fallbackMultiplier
-  if (multiplier === undefined) {
-    return null
-  }
-  return {
-    multiplier,
-    winningChance: isRecord(value) ? (toNumber(value.winningChance) ?? 0) : 0
-  }
-}
-
-function normalizeBet88DiceCustom(value: unknown): Bet88Dice | null {
-  if (!isRecord(value)) {
-    return null
-  }
-
-  const result = value.result
-  const winningChance = value.winningChance
-
-  return {
-    result: result === undefined || result === null ? '0' : String(result),
-    winningChance: winningChance === undefined || winningChance === null ? '0' : String(winningChance)
-  }
-}
-
-function normalizeBet88MinesCustom(value: unknown): Bet88Mines | null {
-  if (!isRecord(value)) {
-    return null
-  }
-
-  return {
-    selected: getNumberArray(value.selected) ?? [],
-    mines: getNumberArray(value.mines) ?? [],
-    mineCount: toNumber(value.mineCount) ?? 0
-  }
-}
-
-function inferBet88Game(custom: unknown): SupportedGameKey | null {
-  if (normalizeBet88KenoCustom(custom)) {
-    return 'keno'
-  }
-
-  if (normalizeBet88LimboCustom(custom)) {
-    return 'limbo'
-  }
-
-  if (normalizeBet88DiceCustom(custom)) {
-    return 'dice'
-  }
-
-  if (normalizeBet88MinesCustom(custom)) {
-    return 'mines'
-  }
-
-  return null
 }
 
 function findMatchingRecord<T>(value: unknown, matcher: (candidate: unknown) => candidate is T, depth = 0): T | null {
@@ -642,15 +519,15 @@ function detectStakeRoute(url: string, providerData: Stake<unknown>): { game: Su
     return { game: 'dice', action: 'roll' }
   }
 
-  if (providerData.game === 'mines') {
-    if (isStakeMinesCashOutState(providerData.state)) {
-      return { game: 'mines', action: 'cashout' }
-    }
+  // if (providerData.game === 'mines') {
+  //   if (isStakeMinesCashOutState(providerData.state)) {
+  //     return { game: 'mines', action: 'cashout' }
+  //   }
 
-    if (isStakeMinesNextState(providerData.state)) {
-      return { game: 'mines', action: 'next' }
-    }
-  }
+  //   if (isStakeMinesNextState(providerData.state)) {
+  //     return { game: 'mines', action: 'next' }
+  //   }
+  // }
 
   return {
     game: providerData.game,
@@ -658,6 +535,9 @@ function detectStakeRoute(url: string, providerData: Stake<unknown>): { game: Su
   }
 }
 
+function inferBet88Game(custom: unknown): SupportedGameKey | null {
+  return null
+}
 function resolveStakePayout(game: SupportedGameKey, amount: number, payout: number, payoutMultiplier: number): number {
   if (game === 'keno' && amount > 0 && payoutMultiplier > 0) {
     return amount * payoutMultiplier
@@ -730,85 +610,85 @@ function parseStakeResult(payload: InterceptedNetworkPayload): GameResult | null
 
   switch (route.game) {
     case 'keno':
-      if (route.action !== 'bet' || !isStakeKenoState(providerData.state)) {
-        return null
-      }
-
-      return {
-        ...baseResult,
-        action: 'bet',
-        providerData: {
-          provider: 'stake',
-          game: 'keno',
-          action: 'bet',
-          response: {
-            ...providerData,
-            state: {
-              ...providerData.state,
-              selectedNumbers: providerData.state.selectedNumbers,
-              drawnNumbers: providerData.state.drawnNumbers
-            }
-          }
-        }
-      }
-
-    case 'limbo':
-      if (route.action !== 'bet' || !isStakeLimboState(providerData.state)) {
-        return null
-      }
-
-      return {
-        ...baseResult,
-        action: 'bet',
-        providerData: {
-          provider: 'stake',
-          game: 'limbo',
-          action: 'bet',
-          response: {
-            ...providerData,
-            state: providerData.state
-          }
-        }
-      }
-
-    case 'dice':
-      if (route.action !== 'roll' || !isStakeDiceState(providerData.state)) {
-        return null
-      }
-
-      return {
-        ...baseResult,
-        action: 'roll',
-        providerData: {
-          provider: 'stake',
-          game: 'dice',
-          action: 'roll',
-          response: {
-            ...providerData,
-            state: providerData.state
-          }
-        }
-      }
-
-    case 'mines':
-      if (route.action === 'cashout' && isStakeMinesCashOutState(providerData.state)) {
-        return {
-          ...baseResult,
-          action: 'cashout',
-          providerData: {
-            provider: 'stake',
-            game: 'mines',
-            action: 'cashout',
-            response: {
-              ...providerData,
-              state: providerData.state
-            }
-          }
-        }
-      }
-
       return null
+    // case 'keno':
+    //   if (route.action !== 'bet' || !isStakeKenoState(providerData.state)) {
+    //     return null
+    //   }
+
+    //   return {
+    //     ...baseResult,
+    //     action: 'bet',
+    //     providerData: {
+    //       provider: 'stake',
+    //       game: 'keno',
+    //       action: 'bet',
+    //       response: {
+    //         ...providerData,
+    //         state: {
+    //           ...providerData.state,
+    //           selectedNumbers: providerData.state.selectedNumbers,
+    //           drawnNumbers: providerData.state.drawnNumbers
+    //         }
+    //       }
+    //     }
+    //   }
+
+    // case 'limbo':
+    //   if (route.action !== 'bet' || !isStakeLimboState(providerData.state)) {
+    //     return null
+    //   }
+
+    //   return {
+    //     ...baseResult,
+    //     action: 'bet',
+    //     providerData: {
+    //       provider: 'stake',
+    //       game: 'limbo',
+    //       action: 'bet',
+    //       response: {
+    //         ...providerData,
+    //         state: providerData.state
+    //       }
+    //     }
+    //   }
+
+    // case 'dice':
+    //   if (route.action !== 'roll' || !isStakeDiceState(providerData.state)) {
+    //     return null
+    //   }
+
+    //   return {
+    //     ...baseResult,
+    //     action: 'roll',
+    //     providerData: {
+    //       provider: 'stake',
+    //       game: 'dice',
+    //       action: 'roll',
+    //       response: {
+    //         ...providerData,
+    //         state: providerData.state
+    //       }
+    //     }
+    //   }
+
+    // case 'mines':
+    //   if (route.action === 'cashout' && isStakeMinesCashOutState(providerData.state)) {
+    //     return {
+    //       ...baseResult,
+    //       action: 'cashout',
+    //       providerData: {
+    //         provider: 'stake',
+    //         game: 'mines',
+    //         action: 'cashout',
+    //         response: {
+    //           ...providerData,
+    //           state: providerData.state
+    //         }
+    //       }
+    //     }
   }
+  return null
 }
 
 function parseBet88Result(payload: InterceptedNetworkPayload): GameResult | null {
@@ -853,81 +733,82 @@ function parseBet88Result(payload: InterceptedNetworkPayload): GameResult | null
 
   switch (route.game) {
     case 'keno':
-      const kenoCustom = normalizeBet88KenoCustom(providerData.custom)
-      if (!kenoCustom) {
-        return null
-      }
+    //   const kenoCustom = normalizeBet88KenoCustom(providerData.custom)
+    //   if (!kenoCustom) {
+    //     return null
+    //   }
 
-      return {
-        ...baseResult,
-        providerData: {
-          provider: 'bet88',
-          game: 'keno',
-          action: 'bet',
-          response: {
-            ...providerData,
-            custom: kenoCustom
-          }
-        }
-      }
+    //   return {
+    //     ...baseResult,
+    //     providerData: {
+    //       provider: 'bet88',
+    //       game: 'keno',
+    //       action: 'bet',
+    //       response: {
+    //         ...providerData,
+    //         custom: kenoCustom
+    //       }
+    //     }
+    //   }
 
-    case 'limbo':
-      const limboCustom = normalizeBet88LimboCustom(providerData.custom, providerData.multiplier)
-      if (!limboCustom) {
-        return null
-      }
+    // case 'limbo':
+    //   const limboCustom = normalizeBet88LimboCustom(providerData.custom, providerData.multiplier)
+    //   if (!limboCustom) {
+    //     return null
+    //   }
 
-      return {
-        ...baseResult,
-        providerData: {
-          provider: 'bet88',
-          game: 'limbo',
-          action: 'bet',
-          response: {
-            ...providerData,
-            custom: limboCustom
-          }
-        }
-      }
+    //   return {
+    //     ...baseResult,
+    //     providerData: {
+    //       provider: 'bet88',
+    //       game: 'limbo',
+    //       action: 'bet',
+    //       response: {
+    //         ...providerData,
+    //         custom: limboCustom
+    //       }
+    //     }
+    //   }
 
-    case 'dice':
-      const diceCustom = normalizeBet88DiceCustom(providerData.custom)
-      if (!diceCustom) {
-        return null
-      }
+    // case 'dice':
+    //   const diceCustom = normalizeBet88DiceCustom(providerData.custom)
+    //   if (!diceCustom) {
+    //     return null
+    //   }
 
-      return {
-        ...baseResult,
-        providerData: {
-          provider: 'bet88',
-          game: 'dice',
-          action: 'bet',
-          response: {
-            ...providerData,
-            custom: diceCustom
-          }
-        }
-      }
+    //   return {
+    //     ...baseResult,
+    //     providerData: {
+    //       provider: 'bet88',
+    //       game: 'dice',
+    //       action: 'bet',
+    //       response: {
+    //         ...providerData,
+    //         custom: diceCustom
+    //       }
+    //     }
+    //   }
 
-    case 'mines':
-      const minesCustom = normalizeBet88MinesCustom(providerData.custom)
-      if (route.action !== 'play' || !minesCustom) {
-        return null
-      }
+    // case 'mines':
+    //   const minesCustom = normalizeBet88MinesCustom(providerData.custom)
+    //   if (route.action !== 'play' || !minesCustom) {
+    //     return null
+    //   }
 
-      return {
-        ...baseResult,
-        providerData: {
-          provider: 'bet88',
-          game: 'mines',
-          action: 'play',
-          response: {
-            ...providerData,
-            custom: minesCustom
-          }
-        }
-      }
+    //   return {
+    //     ...baseResult,
+    //     providerData: {
+    //       provider: 'bet88',
+    //       game: 'mines',
+    //       action: 'play',
+    //       response: {
+    //         ...providerData,
+    //         custom: minesCustom
+    //       }
+    //     }
+    //   }
   }
+  return null
 }
 
 function parseBooleanFlag(value: string): boolean {
@@ -1249,117 +1130,6 @@ async function saveRouletteResult(result: RouletteSpinResult): Promise<void> {
   })
 }
 
-function saveTennisEvents(events: TennisEvent[]): void {
-  const nextSignature = JSON.stringify(
-    events.map((event) => ({
-      id: event.id,
-      provider: event.provider,
-      href: event.href,
-      statusLabel: event.statusLabel,
-      tour: event.tour,
-      tournament: event.tournament,
-      players: event.players,
-      markets: event.markets
-    }))
-  )
-
-  if (nextSignature === lastTennisSignature) {
-    return
-  }
-
-  lastTennisSignature = nextSignature
-  chrome.storage.local.set({ tennisResults: summarizeTennisEvents(events) })
-}
-
-function getTennisCapturePageUrl(): string {
-  const currentUrl = window.location.href
-
-  if (currentUrl && !currentUrl.startsWith('about:blank') && !currentUrl.startsWith('blob:')) {
-    return currentUrl
-  }
-
-  if (document.referrer) {
-    return document.referrer
-  }
-
-  return currentUrl
-}
-
-function getTennisCaptureSite(): 'stake' | 'bet88' | null {
-  const site = getSupportedSite(getTennisCapturePageUrl())?.key
-  if (site === 'stake' || site === 'bet88') {
-    return site
-  }
-
-  return null
-}
-
-function isTennisCaptureContext(): boolean {
-  const site = getTennisCaptureSite()
-  return site === 'stake'
-}
-
-function syncTennisBoardSnapshot(): void {
-  if (!isTennisCaptureContext() || !hasTennisSurface(document)) {
-    return
-  }
-
-  const pageUrl = getTennisCapturePageUrl()
-  const site = getTennisCaptureSite()
-  if (site !== 'stake') {
-    return
-  }
-
-  const events = extractTennisEvents(document, pageUrl, site)
-
-  if (events.length === 0) {
-    return
-  }
-
-  saveTennisEvents(events)
-}
-
-function scheduleTennisBoardSync(): void {
-  if (tennisSyncTimer !== null) {
-    window.clearTimeout(tennisSyncTimer)
-  }
-
-  tennisSyncTimer = window.setTimeout(() => {
-    tennisSyncTimer = null
-    syncTennisBoardSnapshot()
-  }, 220)
-}
-
-function initTennisCapture(): void {
-  if (!isTennisCaptureContext()) {
-    return
-  }
-
-  const root = document.documentElement
-  if (!root) {
-    window.addEventListener('DOMContentLoaded', initTennisCapture, { once: true })
-    return
-  }
-
-  const observer = new MutationObserver(() => {
-    scheduleTennisBoardSync()
-  })
-
-  observer.observe(root, {
-    childList: true,
-    subtree: true,
-    characterData: true
-  })
-
-  window.addEventListener('load', scheduleTennisBoardSync, { once: true })
-  window.addEventListener('popstate', scheduleTennisBoardSync)
-  window.addEventListener('hashchange', scheduleTennisBoardSync)
-
-  scheduleTennisBoardSync()
-}
-
-initTennisCapture()
-
 // Evolution board element locator — finds selector in any frame, reports coords
 // in the TOP-LEVEL viewport so background can dispatch a trusted CDP click there.
 // This works across OOPIFs (cross-origin iframes) by walking the frame chain via
@@ -1406,7 +1176,7 @@ function reportCoordsToBackground(requestId: string, x: number, y: number, selec
   // sendMessage in that state throws "Extension context invalidated" and the
   // background never receives coords, so all trusted clicks time out.
   if (!chrome.runtime?.id) {
-    console.warn('[watchful-wind] Extension context invalidated — reload the page to restore click automation.')
+    console.warn('[TSN] Extension context invalidated — reload the page to restore click automation.')
     return
   }
   try {
@@ -1419,7 +1189,7 @@ function reportCoordsToBackground(requestId: string, x: number, y: number, selec
       frame: window.location.href
     })
   } catch (error) {
-    console.warn('[watchful-wind] Failed to report coords:', error)
+    console.warn('[TSN] Failed to report coords:', error)
   }
 }
 
@@ -1648,7 +1418,7 @@ function syncEvolutionChips(): void {
   }
 
   lastChipSignature = signature
-  console.log('[watchful-wind] chips detected:', values, 'in frame:', window.location.href)
+  console.log('[TSN] chips detected:', values, 'in frame:', window.location.href)
   chrome.storage.local.set({ evolutionChips: values })
 }
 
@@ -1732,3 +1502,240 @@ function initEvolutionChipCapture(): void {
 }
 
 initEvolutionChipCapture()
+
+/*
+let tennisSyncTimer: number | null = null
+let lastTennisSignature = ''
+
+
+
+initTennisCapture()
+import { extractTennisEvents, hasTennisSurface } from '../lib/tennis/scrape'
+
+function isStakeKenoState(value: unknown): value is StakeKeno {
+  return (
+    isRecord(value) &&
+    typeof value.risk === 'string' &&
+    isNumberArray(value.drawnNumbers) &&
+    isNumberArray(value.selectedNumbers)
+  )
+}
+
+function isStakeLimboState(value: unknown): value is StakeLimbo {
+  return isRecord(value) && typeof value.result === 'number'
+}
+
+function isStakeDiceState(value: unknown): value is StakeDice {
+  return (
+    isRecord(value) &&
+    typeof value.result === 'number' &&
+    typeof value.target === 'number' &&
+    typeof value.condition === 'string'
+  )
+}
+
+function isStakeMinesRound(value: unknown): value is { field: number; payoutMultiplier: number } {
+  return isRecord(value) && typeof value.field === 'number' && typeof value.payoutMultiplier === 'number'
+}
+
+function isStakeMinesBetState(value: unknown): value is StakeMinesBet {
+  return isRecord(value) && Array.isArray(value.rounds) && typeof value.minesCount === 'number' && value.mines === null
+}
+
+function isStakeMinesNextState(value: unknown): value is StakeMinesNext {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.rounds) &&
+    value.rounds.every(isStakeMinesRound) &&
+    typeof value.minesCount === 'number' &&
+    value.mines === null
+  )
+}
+
+function isStakeMinesCashOutState(value: unknown): value is StakeMinesCashOut {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.rounds) &&
+    value.rounds.every(isStakeMinesRound) &&
+    typeof value.minesCount === 'number' &&
+    isNumberArray(value.mines)
+  )
+}
+
+function normalizeBet88KenoCustom(value: unknown): Bet88Keno | null {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  return {
+    drawNumbers: getNumberArray(value.drawNumbers) ?? [],
+    numberOfMatches: toNumber(value.numberOfMatches) ?? 0
+  }
+}
+
+function normalizeBet88LimboCustom(value: unknown, fallbackMultiplier?: number): Bet88Limbo | null {
+  const multiplier = isRecord(value) ? (toNumber(value.multiplier) ?? fallbackMultiplier) : fallbackMultiplier
+  if (multiplier === undefined) {
+    return null
+  }
+  return {
+    multiplier,
+    winningChance: isRecord(value) ? (toNumber(value.winningChance) ?? 0) : 0
+  }
+}
+
+function normalizeBet88DiceCustom(value: unknown): Bet88Dice | null {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  const result = value.result
+  const winningChance = value.winningChance
+
+  return {
+    result: result === undefined || result === null ? '0' : String(result),
+    winningChance: winningChance === undefined || winningChance === null ? '0' : String(winningChance)
+  }
+}
+
+function normalizeBet88MinesCustom(value: unknown): Bet88Mines | null {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  return {
+    selected: getNumberArray(value.selected) ?? [],
+    mines: getNumberArray(value.mines) ?? [],
+    mineCount: toNumber(value.mineCount) ?? 0
+  }
+}
+
+function inferBet88Game(custom: unknown): SupportedGameKey | null {
+  if (normalizeBet88KenoCustom(custom)) {
+    return 'keno'
+  }
+
+  if (normalizeBet88LimboCustom(custom)) {
+    return 'limbo'
+  }
+
+  if (normalizeBet88DiceCustom(custom)) {
+    return 'dice'
+  }
+
+  if (normalizeBet88MinesCustom(custom)) {
+    return 'mines'
+  }
+
+  return null
+}
+
+function saveTennisEvents(events: TennisEvent[]): void {
+  const nextSignature = JSON.stringify(
+    events.map((event) => ({
+      id: event.id,
+      provider: event.provider,
+      href: event.href,
+      statusLabel: event.statusLabel,
+      tour: event.tour,
+      tournament: event.tournament,
+      players: event.players,
+      markets: event.markets
+    }))
+  )
+
+  if (nextSignature === lastTennisSignature) {
+    return
+  }
+
+  lastTennisSignature = nextSignature
+  chrome.storage.local.set({ tennisResults: summarizeTennisEvents(events) })
+}
+
+function getTennisCapturePageUrl(): string {
+  const currentUrl = window.location.href
+
+  if (currentUrl && !currentUrl.startsWith('about:blank') && !currentUrl.startsWith('blob:')) {
+    return currentUrl
+  }
+
+  if (document.referrer) {
+    return document.referrer
+  }
+
+  return currentUrl
+}
+
+function getTennisCaptureSite(): 'stake' | 'bet88' | null {
+  const site = getSupportedSite(getTennisCapturePageUrl())?.key
+  if (site === 'stake' || site === 'bet88') {
+    return site
+  }
+
+  return null
+}
+
+function isTennisCaptureContext(): boolean {
+  const site = getTennisCaptureSite()
+  return site === 'stake'
+}
+
+function syncTennisBoardSnapshot(): void {
+  if (!isTennisCaptureContext() || !hasTennisSurface(document)) {
+    return
+  }
+
+  const pageUrl = getTennisCapturePageUrl()
+  const site = getTennisCaptureSite()
+  if (site !== 'stake') {
+    return
+  }
+
+  const events = extractTennisEvents(document, pageUrl, site)
+
+  if (events.length === 0) {
+    return
+  }
+
+  saveTennisEvents(events)
+}
+
+function scheduleTennisBoardSync(): void {
+  if (tennisSyncTimer !== null) {
+    window.clearTimeout(tennisSyncTimer)
+  }
+
+  tennisSyncTimer = window.setTimeout(() => {
+    tennisSyncTimer = null
+    syncTennisBoardSnapshot()
+  }, 220)
+}
+
+function initTennisCapture(): void {
+  if (!isTennisCaptureContext()) {
+    return
+  }
+
+  const root = document.documentElement
+  if (!root) {
+    window.addEventListener('DOMContentLoaded', initTennisCapture, { once: true })
+    return
+  }
+
+  const observer = new MutationObserver(() => {
+    scheduleTennisBoardSync()
+  })
+
+  observer.observe(root, {
+    childList: true,
+    subtree: true,
+    characterData: true
+  })
+
+  window.addEventListener('load', scheduleTennisBoardSync, { once: true })
+  window.addEventListener('popstate', scheduleTennisBoardSync)
+  window.addEventListener('hashchange', scheduleTennisBoardSync)
+
+  scheduleTennisBoardSync()
+}
+*/

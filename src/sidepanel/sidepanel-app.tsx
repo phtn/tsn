@@ -1,11 +1,19 @@
 import { startTransition, useCallback, useEffect, useMemo, useState } from 'react'
-import { deriveVirtualBankroll } from '../lib/virtual-bankroll'
 import {
   getEvolutionRecentNumbersForTable,
   normalizeEvolutionLobbyHistories,
   normalizeEvolutionRecentNumbers,
   type EvolutionLobbyHistory
 } from '../lib/roulette/evolution-recent-numbers'
+import {
+  getDefaultRouletteLobbyHistoriesEndpointConfig,
+  normalizeRouletteLobbyHistoriesCapture,
+  normalizeRouletteLobbyHistoriesEndpointConfig,
+  resolveRouletteLobbyHistoriesEndpointUrl,
+  type RouletteLobbyHistoriesCapture,
+  type RouletteLobbyHistoriesEndpointConfig
+} from '../lib/rouletteLobbyHistories'
+import { deriveVirtualBankroll } from '../lib/virtual-bankroll'
 import {
   EMPTY_STORED_DATA,
   EMPTY_VIRTUAL_BANKROLL,
@@ -25,11 +33,9 @@ import {
   type RouletteStoredData
 } from '../types/roulette'
 import { EMPTY_TENNIS_STORED_DATA, normalizeTennisStoredData, type TennisStoredData } from '../types/tennis'
-import { OriginalsWorkspace } from './components/originals/originals-workspace'
 import { RouletteWorkspace } from './components/roulette/roulette-workspace'
-import { GameClassSwitcher, type GameClassView } from './components/shared/game-class-switcher'
+import { type GameClassView } from './components/shared/game-class-switcher'
 import { MainHeader } from './components/shared/header'
-import { TennisWorkspace } from './components/tennis/tennis-workspace'
 import { getNetTone } from './lib/formatters'
 import {
   getDefaultRouletteResultEndpointConfig,
@@ -37,14 +43,6 @@ import {
   resolveRouletteResultEndpointUrl,
   type RouletteResultEndpointConfig
 } from './lib/rouletteSpinResults'
-import {
-  getDefaultRouletteLobbyHistoriesEndpointConfig,
-  normalizeRouletteLobbyHistoriesCapture,
-  normalizeRouletteLobbyHistoriesEndpointConfig,
-  resolveRouletteLobbyHistoriesEndpointUrl,
-  type RouletteLobbyHistoriesCapture,
-  type RouletteLobbyHistoriesEndpointConfig
-} from '../lib/rouletteLobbyHistories'
 
 const INITIAL_STATUS: PanelStatus = { connected: false, message: 'Checking the active tab...', site: null }
 
@@ -176,9 +174,9 @@ const App = () => {
           : []
         const recentNumbers = normalizeEvolutionRecentNumbers(data.evolutionRecentNumbers).slice(0, 500)
         const recentHistory = Array.isArray(data.evolutionRecentHistory)
-          ? data.evolutionRecentHistory.filter(
-              (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 36
-            ).slice(0, 500)
+          ? data.evolutionRecentHistory
+              .filter((v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 36)
+              .slice(0, 500)
           : []
         const lobbyHistories = normalizeEvolutionLobbyHistories(data.evolutionLobbyHistories)
         const tableName =
@@ -254,7 +252,7 @@ const App = () => {
 
   const clearData = useCallback(() => {
     if (!window.confirm('Clear all tracked game history?')) return
-    chrome.storage.local.remove(['casinoResults', 'rouletteResults', 'tennisResults'], () => {
+    chrome.storage.local.remove(['rouletteResults'], () => {
       startTransition(() => {
         setStats(EMPTY_STORED_DATA)
         setRouletteStats(EMPTY_ROULETTE_STORED_DATA)
@@ -303,17 +301,20 @@ const App = () => {
     })
   }, [])
 
-  const saveRouletteResultEndpointConfig = useCallback((config: RouletteResultEndpointConfig) => {
-    const fallback = getDefaultRouletteResultEndpointConfig(devServerPort)
-    const nextConfig: RouletteResultEndpointConfig = {
-      baseUrl: config.baseUrl.trim() || fallback.baseUrl,
-      endpoint: config.endpoint.trim() || fallback.endpoint
-    }
+  const saveRouletteResultEndpointConfig = useCallback(
+    (config: RouletteResultEndpointConfig) => {
+      const fallback = getDefaultRouletteResultEndpointConfig(devServerPort)
+      const nextConfig: RouletteResultEndpointConfig = {
+        baseUrl: config.baseUrl.trim() || fallback.baseUrl,
+        endpoint: config.endpoint.trim() || fallback.endpoint
+      }
 
-    chrome.storage.local.set({ rouletteResultEndpointConfig: nextConfig }, () => {
-      startTransition(() => setRouletteResultEndpointConfig(nextConfig))
-    })
-  }, [devServerPort])
+      chrome.storage.local.set({ rouletteResultEndpointConfig: nextConfig }, () => {
+        startTransition(() => setRouletteResultEndpointConfig(nextConfig))
+      })
+    },
+    [devServerPort]
+  )
 
   const saveRouletteLobbyHistoriesEndpointConfig = useCallback(
     (config: RouletteLobbyHistoriesEndpointConfig) => {
@@ -546,46 +547,25 @@ const App = () => {
           onGameClassChange={onGameClassChange}
           gameClass={activeGameClass}
         />
-        <div className='hidden px-6 pt-3'>
-          <GameClassSwitcher value={activeGameClass} onChange={setActiveGameClass} />
-        </div>
-
-        {activeGameClass === 'originals' ? (
-          <OriginalsWorkspace
-            pulseProps={pulseProps}
-            vrBankProps={vrBankProps}
-            recentResults={recentResults}
-            toggleShowSettings={toggleShowSettings}
-            settingsVisible={showSettings}
-            setDevServerPort={setDevServerPort}
-            saveDevServerPort={saveDevServerPort}
-            devServerPort={devServerPort}
-            status={status}
-            stats={stats}
-          />
-        ) : activeGameClass === 'roulette' ? (
-          <RouletteWorkspace
-            status={status}
-            stats={rouletteStats}
-            evolutionChips={evolutionChips}
-            evolutionRebetVisible={evolutionRebetVisible}
-            evolutionBettingOpen={evolutionBettingOpen}
-            evolutionRecentNumbers={evolutionRecentNumbers}
-            evolutionRecentHistory={evolutionRecentHistory}
-            evolutionTableState={evolutionTableState}
-            evolutionTableName={evolutionTableName}
-            evolutionLobbyHistories={evolutionLobbyHistories}
-            rouletteResultEndpointConfig={rouletteResultEndpointConfig}
-            rouletteResultEndpointUrl={rouletteResultEndpointUrl}
-            rouletteLobbyHistoriesEndpointConfig={rouletteLobbyHistoriesEndpointConfig}
-            rouletteLobbyHistoriesEndpointUrl={rouletteLobbyHistoriesEndpointUrl}
-            saveRouletteResultEndpointConfig={saveRouletteResultEndpointConfig}
-            saveRouletteLobbyHistoriesEndpointConfig={saveRouletteLobbyHistoriesEndpointConfig}
-            onReset={clearRouletteResults}
-          />
-        ) : (
-          <TennisWorkspace status={status} stats={tennisStats} onReset={clearTennisResults} />
-        )}
+        <RouletteWorkspace
+          status={status}
+          stats={rouletteStats}
+          evolutionChips={evolutionChips}
+          evolutionRebetVisible={evolutionRebetVisible}
+          evolutionBettingOpen={evolutionBettingOpen}
+          evolutionRecentNumbers={evolutionRecentNumbers}
+          evolutionRecentHistory={evolutionRecentHistory}
+          evolutionTableState={evolutionTableState}
+          evolutionTableName={evolutionTableName}
+          evolutionLobbyHistories={evolutionLobbyHistories}
+          rouletteResultEndpointConfig={rouletteResultEndpointConfig}
+          rouletteResultEndpointUrl={rouletteResultEndpointUrl}
+          rouletteLobbyHistoriesEndpointConfig={rouletteLobbyHistoriesEndpointConfig}
+          rouletteLobbyHistoriesEndpointUrl={rouletteLobbyHistoriesEndpointUrl}
+          saveRouletteResultEndpointConfig={saveRouletteResultEndpointConfig}
+          saveRouletteLobbyHistoriesEndpointConfig={saveRouletteLobbyHistoriesEndpointConfig}
+          onReset={clearRouletteResults}
+        />
       </div>
     </div>
   )

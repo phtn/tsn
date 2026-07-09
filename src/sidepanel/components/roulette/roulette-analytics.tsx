@@ -529,12 +529,8 @@ export const Analytics: FC<AnalyticsProps> = ({
 
   return (
     <div className='space-y-2 text-white p-1'>
-      <div className='mx-auto space-y-1.5'>
-        {/* Hot & Cold Numbers */}
-        <HotAndColdNumbers hotNumbers={stats.hotNumbers} coldNumbers={stats.coldNumbers} />
-
-        {/* Lobby History — one row per table */}
-        {/*{lobbyHistories.length > 0 && <LobbyHistories data={lobbyHistories} />}*/}
+      <div className='mx-auto space-y-0'>
+        {/* Table History */}
         {mostRecentNumbers.length > 0 && (
           <MostRecentNumbers
             highlightedIndexes={highlightedSignalIndexes}
@@ -557,6 +553,9 @@ export const Analytics: FC<AnalyticsProps> = ({
         {allNumbersFromStart.length > 0 && (
           <SignalOverview label={`Analysis`} total={allNumbersFromStart.length} summary={signalSummary} />
         )}
+
+        {/* Hot & Cold Numbers */}
+        <HotAndColdNumbers hotNumbers={stats.hotNumbers} coldNumbers={stats.coldNumbers} />
         {/* Recent Numbers Strip */}
         <VPctOverview stats={stats} />
 
@@ -622,34 +621,6 @@ export const Analytics: FC<AnalyticsProps> = ({
   )
 }
 
-interface LobbyHistoriesProps {
-  data: { tableId: string; numbers: number[] }[]
-}
-
-const LobbyHistories = ({ data }: LobbyHistoriesProps) => (
-  <div className={cn('rounded-sm p-3 space-y-1 bg-neutral-900')}>
-    {data.map(({ tableId, numbers }) => (
-      <div key={tableId} className='flex items-center gap-3'>
-        <span className='text-xs uppercase text-neutral-200 min-w-48 shrink-0 truncate' title={tableId}>
-          {
-            tmap[
-              `${tableId
-                .replace(/0+$/, '')
-                .replace(/^[A-Z][a-z]+/, '')
-                .toLowerCase()}` as keyof typeof tmap
-            ]
-          }
-        </span>
-        <div className='flex gap-0.5 bg-white/40 p-0.5 rounded-xs'>
-          {numbers.slice(0, 11).map((n, i) => (
-            <LobbyNumber key={i} number={n} />
-          ))}
-        </div>
-      </div>
-    ))}
-  </div>
-)
-
 const MostRecentNumbers = ({
   numbers,
   highlightedIndexes,
@@ -669,11 +640,11 @@ const MostRecentNumbers = ({
     <div className={cn('rounded-sm p-2 space-y-2 bg-neutral-900')}>
       <div className='flex items-center justify-between gap-3'>
         <div>
-          <h2 className='font-okx font-medium text-white/70 text-sm uppercase'>Most Recent *</h2>
+          <h2 className='font-okx font-medium text-neutral-200 text-xs uppercase'>Recents</h2>
         </div>
-        <p className='font-okx text-neutral-400 text-sm '>{displayedNumbers.length}</p>
+        <p className='font-okx text-neutral-300 text-xs'>{displayedNumbers.length}</p>
       </div>
-      <div className='flex max-h-64 flex-wrap gap-0.75 overflow-y-auto pr-1'>
+      <div className='flex max-h-60 flex-wrap gap-0.75 overflow-y-auto pr-1'>
         {displayedNumbers.map((number, index) => (
           <LobbyNumber
             key={`${number}-${index}`}
@@ -707,11 +678,11 @@ const HistoryNumbers = ({
   <div className={cn('rounded-sm p-2 space-y-2 bg-neutral-900')}>
     <div className='flex items-center justify-between gap-3'>
       <div>
-        <h2 className='font-okx text-sm font-medium uppercase text-white/70'>History</h2>
+        <h2 className='font-okx text-xs font-medium uppercase text-neutral-200'>History</h2>
       </div>
-      <p className='text-sm font-okx text-neutral-400'>{numbers.length}</p>
+      <p className='font-okx text-xs text-neutral-300'>{numbers.length}</p>
     </div>
-    <div className='flex max-h-140 flex-wrap gap-1.25 overflow-y-auto'>
+    <div className='flex max-h-36 flex-wrap gap-0.75 overflow-y-auto'>
       {numbers.map((number, index) => (
         <LobbyNumber
           key={`${number}-${index}`}
@@ -739,30 +710,58 @@ const SignalOverview = ({ label, total, summary }: SignalOverviewProps) => {
   const lossPct = resolvedSignals > 0 ? (summary.losses / resolvedSignals) * 100 : 0
 
   return (
-    <div className={cn('rounded-sm p-3 space-y-2 bg-neutral-900')}>
+    <div className={cn('rounded-sm space-y-1 p-2 bg-neutral-900')}>
       <div className='flex items-end justify-between gap-3'>
         <div>
-          <h2 className='font-okx text-sm font-semibold uppercase text-white'>{label}</h2>
+          <p className='font-okx text-xs font-medium uppercase text-neutral-200'>{label}</p>
         </div>
-        <p className='text-xs font-okx text-neutral-400'>{total} captured</p>
+        <p className='text-xs font-okx text-neutral-300'>{total} captured</p>
       </div>
       <div className='grid grid-cols-4 gap-1 text-xs'>
         <StatCard
           title='Signals'
-          value={summary.signalsFound}
+          value={
+            <div className='flex items-end justify-between w-full'>
+              <span>{summary.signalsFound}</span>
+              <span className='font-light text-base text-slate-200'>{pendingSignals ? 'S' : 'I'}</span>
+            </div>
+          }
           color='sky'
-          extra={pendingSignals > 0 ? <span>{pendingSignals} pending</span> : null}
         />
-        <StatCard title='Wins' value={summary.wins} color='gold' extra={<span>{winPct.toFixed(0)}%</span>} />
-        <StatCard title='Losses' value={summary.losses} color='rose' extra={<span>{lossPct.toFixed(0)}%</span>} />
+        <StatCard
+          title='Wins'
+          value={
+            <div className='flex items-end justify-between w-full'>
+              <span>{summary.wins}</span>
+              <span className='font-light text-base text-slate-100'>
+                {winPct.toFixed(0)}
+                <span className='font-thin text-xs'>%</span>
+              </span>
+            </div>
+          }
+          color='gold'
+        />
+        <StatCard
+          title='Losses'
+          value={
+            <div className='flex items-end justify-between w-full'>
+              <span>{summary.losses}</span>
+              <span className='font-light text-base text-slate-100'>
+                {lossPct.toFixed(0)}
+                <span className='font-thin text-xs'>%</span>
+              </span>
+            </div>
+          }
+          color='rose'
+        />
         <StatCard title='Best Streak' value={summary.bestWinStreak} color='neutral' />
       </div>
       <div className='flex flex-wrap gap-1'>
-        {summary.series.slice(0, 40).map((outcome, index) => (
+        {summary.series.slice(0, 39).map((outcome, index) => (
           <span
             key={`${outcome}-${index}`}
             className={cn(
-              'inline-flex h-6 min-w-7 items-center justify-center rounded-xs px-1 text-[12px] font-okx font-semibold',
+              'inline-flex h-7 min-w-8 items-center justify-center rounded-xs px-1 text-[12px] font-okx font-semibold',
               outcome === 'W'
                 ? 'bg-amber-300/30 text-amber-100'
                 : outcome === '0'
@@ -773,14 +772,18 @@ const SignalOverview = ({ label, total, summary }: SignalOverviewProps) => {
           </span>
         ))}
       </div>
-      <p className='text-[11px] font-okx text-neutral-400'>Zero losses: {summary.zeroLosses}</p>
+      <p className='font-okx text-xs font-medium uppercase text-neutral-200 space-x-4 mt-1'>
+        <span>Zero {summary.zeroLosses} </span>
+        <span>&middot;</span>
+        <span>Swipes {summary.losses}</span>
+      </p>
     </div>
   )
 }
 
 interface StatCardProps {
   title: string
-  value: string | number
+  value: ReactNode
   subtitle?: string
   icon?: ReactNode
   trend?: 'up' | 'down' | 'neutral'
@@ -791,19 +794,19 @@ interface StatCardProps {
 const STAT_VALUE_CLASS_NAME: Record<NonNullable<StatCardProps['color']>, string> = {
   emerald: 'bg-linear-to-r from-emerald-400 to-emerald-300 bg-clip-text text-transparent',
   neutral: 'bg-linear-to-r from-neutral-200 to-neutral-400 bg-clip-text text-transparent',
-  rose: 'bg-linear-to-r from-red-500 to-red-400 bg-clip-text text-transparent',
-  gold: 'bg-linear-to-r from-yellow-400 to-yellow-400 bg-clip-text text-transparent',
+  rose: 'bg-linear-to-r from-red-200 to-red-200 bg-clip-text text-transparent',
+  gold: 'bg-linear-to-r from-yellow-300 to-yellow-200 bg-clip-text text-transparent',
   sky: 'bg-linear-to-r from-sky-500 to-sky-500 bg-clip-text text-transparent'
 }
 
 const StatCard: FC<StatCardProps> = ({ title, value, trend, color = 'emerald', extra }) => (
-  <div className={cn('rounded-sm p-2 bg-neutral-700')}>
+  <div className={cn('rounded-xs p-1.5 bg-neutral-700 space-y-1.5')}>
     <div className='flex items-center justify-between'>
       <span className='text-[9px] font-ios text-neutral-300 uppercase tracking-widest'>{title}</span>
       {extra}
     </div>
-    <div className='flex items-end gap-0'>
-      <span className={cn('text-xl font-medium', STAT_VALUE_CLASS_NAME[color])}>{value}</span>
+    <div className='flex items-end w-full'>
+      <div className={cn('text-xl font-medium w-full', STAT_VALUE_CLASS_NAME[color])}>{value}</div>
       {trend && (
         <span
           className={` ${trend === 'up' ? 'text-emerald-400' : trend === 'down' ? 'text-rose-400' : 'text-neutral-400'}`}>
@@ -854,7 +857,7 @@ interface HotAndColdNumbersProps {
 }
 
 const HotAndColdNumbers = ({ hotNumbers, coldNumbers }: HotAndColdNumbersProps) => (
-  <div className={cn('grid grid-cols-2 gap-1 px-1 py-2 bg-neutral-950')}>
+  <div className={cn('grid grid-cols-2 gap-1 px-1 py-2 bg-neutral-950 mt-4')}>
     <div className={cn('')}>
       <div className='flex flex-wrap gap-1.5'>
         <div className='p-0.5 h-4'>
@@ -1020,3 +1023,31 @@ const LobbyNumber: FC<{
     </span>
   )
 }
+
+interface LobbyHistoriesProps {
+  data: { tableId: string; numbers: number[] }[]
+}
+
+const LobbyHistories = ({ data }: LobbyHistoriesProps) => (
+  <div className={cn('rounded-sm p-3 space-y-1 bg-neutral-900')}>
+    {data.map(({ tableId, numbers }) => (
+      <div key={tableId} className='flex items-center gap-3'>
+        <span className='text-xs uppercase text-neutral-200 min-w-48 shrink-0 truncate' title={tableId}>
+          {
+            tmap[
+              `${tableId
+                .replace(/0+$/, '')
+                .replace(/^[A-Z][a-z]+/, '')
+                .toLowerCase()}` as keyof typeof tmap
+            ]
+          }
+        </span>
+        <div className='flex gap-0.5 bg-white/40 p-0.5 rounded-xs'>
+          {numbers.slice(0, 11).map((n, i) => (
+            <LobbyNumber key={i} number={n} />
+          ))}
+        </div>
+      </div>
+    ))}
+  </div>
+)

@@ -62,7 +62,7 @@ export const RouletteControls = ({
   }, [lastWinProfit, winSFX])
 
   return (
-    <div className='flex items-center justify-between bg-zinc-950 py-3 px-3 rounded-s-lg shadow-inner'>
+    <div className='flex items-center justify-between bg-zinc-950 py-2 px-3 rounded-s-lg shadow-inner'>
       <div className=''>
         {lastWinProfit !== null && (
           <p className='font-semibold text-lg italic uppercase text-emerald-100'>

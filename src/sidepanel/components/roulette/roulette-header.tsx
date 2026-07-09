@@ -1,8 +1,5 @@
-import { Icon } from '@/src/lib/icons'
 import { getNumberTone } from '../../../lib/roulette/utils'
-import { cn } from '../../../lib/utils'
 import { RouletteSpinResult } from '../../../types/roulette'
-import { rtnMap } from './tables'
 import { getTableName } from './utils'
 
 interface RouletteHeaderProps {
@@ -24,7 +21,7 @@ function getTableNameFallback(spin: RouletteSpinResult | null): string {
 
 export const RouletteHeader = ({ tableId, latestSpin, previewSpins }: RouletteHeaderProps) => {
   const providerLabel = getProviderLabel(latestSpin)
-  const tableName = latestSpin?.tableName || getTableName(tableId, getTableNameFallback(latestSpin))
+  const tableName = latestSpin?.game || getTableName(tableId, getTableNameFallback(latestSpin))
   const recents = latestSpin ? previewSpins.slice(0, 12) : previewSpins.slice(0, 10)
 
   return (
@@ -32,30 +29,17 @@ export const RouletteHeader = ({ tableId, latestSpin, previewSpins }: RouletteHe
       <div className='absolute bottom-[-35%] right-[-16%] h-52 w-52 rounded-full bg-[radial-gradient(circle,rgba(239,68,68,0.28),transparent_68%)] blur-2xl' />
       <div className='relative'>
         <div className='flex items-start justify-between gap-4'>
-          <div className='w-full'>
-            <div className='flex items-center space-x-0 h-4.5'>
-              <Icon name='evolution' className='size-4 opacity-40 rotate-180' />
-              <p
-                id='provider'
-                className='font-display text-xs italic uppercase tracking-[0.2em] leading-none text-gray-200/80'>
-                {providerLabel}
-              </p>
-            </div>
-
-            <h2 id='table-name' className='mt-px font-display font-medium text-sm leading-none text-white'>
-              {tableId} - {tableId ? rtnMap[tableId] : 'no id'}
-            </h2>
-          </div>
-          <div
+          <div className='w-full'></div>
+          {/*<div
             className={cn(
               `flex items-center justify-center rounded-full border border-emerald-300/25 bg-emerald-300/10 h-12 w-auto aspect-square uppercase text-emerald-100 ${getNumberTone(latestSpin?.winningNumber)} border-3! border-white/15 shadow-inner`
             )}>
             <span className={cn('font-medium text-xs text-center', { 'text-xl font-bold': latestSpin !== null })}>
               {latestSpin ? previewSpins[0] : 'Awaiting Spins'}
             </span>
-          </div>
+          </div>*/}
         </div>
-        <div className='mt-2 rounded-lg w-full'>
+        <div className='mt-1 rounded-lg w-full'>
           {/*<div className='flex items-end justify-between gap-3'>
             <p className='text-[0.62rem] uppercase tracking-[0.22em] text-slate-500'>Recent spins</p>
             <p className='text-xs text-slate-500'>{latestSpin ? latestSpin.description : 'Listening for spins'}</p>

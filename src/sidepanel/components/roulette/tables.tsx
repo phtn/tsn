@@ -52,6 +52,6 @@ export const rtnMap: Record<string, string> = {
   peryaro000000001: 'Perya Roulette',
   mdkqijp3dctrhnuv: 'Salon Privé Roulette',
   pv5q45yjhasyt46y: 'Emperor Roulette',
-  pv2zgy42anvdwk3l: 'Lotus Roulette',
-  'live-evolution-26': 'Speed Auto Roulette'
+  pv2zgy42anvdwk3l: 'Lotus Roulette'
+  // 'live-evolution-26': 'Speed Auto Roulette'
 }
