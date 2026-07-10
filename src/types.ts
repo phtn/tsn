@@ -6,7 +6,7 @@ import type { Stake, StakeDice, StakeKeno, StakeLimbo, StakeMinesCashOut } from 
 
 export type ClassName = HTMLProps<HTMLElement>['className']
 
-export type SupportedSiteKey = 'bet88' | 'stake'
+export type SupportedSiteKey = 'bet88' | 'stake' | 'okbet'
 export type SupportedGameKey = 'keno' | 'limbo' | 'dice' | 'mines'
 export type GameOutcome = 'win' | 'loss'
 
@@ -124,7 +124,8 @@ export const EMPTY_RESULT_SUMMARY: ResultSummary = {
 
 export const EMPTY_PROVIDER_SUMMARIES: ProviderSummaries = {
   bet88: { ...EMPTY_RESULT_SUMMARY },
-  stake: { ...EMPTY_RESULT_SUMMARY }
+  stake: { ...EMPTY_RESULT_SUMMARY },
+  okbet: { ...EMPTY_RESULT_SUMMARY }
 }
 
 export const EMPTY_STORED_DATA: StoredData = {
@@ -245,7 +246,8 @@ export function summarizeResults(results: GameResult[]): StoredData {
     ...summarizeGroup(results),
     providers: {
       bet88: summarizeGroup(results.filter((result) => result.provider === 'bet88')),
-      stake: summarizeGroup(results.filter((result) => result.provider === 'stake'))
+      stake: summarizeGroup(results.filter((result) => result.provider === 'stake')),
+      okbet: summarizeGroup(results.filter((result) => result.provider === 'stake'))
     }
   }
 }
@@ -291,4 +293,15 @@ export function normalizeVirtualBankroll(stored: unknown): VirtualBankrollState 
     replenishedTotal: replenishedTotal ?? EMPTY_VIRTUAL_BANKROLL.replenishedTotal,
     trackingStartedAt: trackingStartedAt ?? EMPTY_VIRTUAL_BANKROLL.trackingStartedAt
   }
+}
+
+export interface OkBet<TCustom> {
+  roundId: number
+  win: boolean
+  active: boolean
+  multiplier: number
+  winAmount: string
+  profit: string
+  playerId: number
+  custom: TCustom
 }

@@ -19,24 +19,24 @@ interface GameClassOption {
 }
 
 const GAME_CLASS_OPTIONS: Array<GameClassOption> = [
-  {
-    value: 'originals',
-    label: 'Originals',
-    icon: 'url(./icons/originals.svg)',
-    style: 'rotate-45 bg-white'
-  },
+  // {
+  //   value: 'originals',
+  //   label: 'Originals',
+  //   icon: 'url(./icons/originals.svg)',
+  //   style: 'rotate-45 bg-white'
+  // },
   {
     value: 'roulette',
     label: 'Roulette',
     icon: 'url(./icons/roulette.svg)',
     style: 'rotate-45 bg-zinc-100'
-  },
-  {
-    value: 'tennis',
-    label: 'Tennis',
-    icon: 'url(./icons/tenns.svg)',
-    style: 'bg-[#27D51C] rotate-65'
   }
+  // {
+  //   value: 'tennis',
+  //   label: 'Tennis',
+  //   icon: 'url(./icons/tenns.svg)',
+  //   style: 'bg-[#27D51C] rotate-65'
+  // }
 ]
 export const MainHeader = ({ status, stats, latestGame, onGameClassChange, gameClass }: HeaderProps) => {
   // const currentGameClassLabel = GAME_CLASS_OPTIONS.find((option) => option.value === gameClass)?.label ?? gameClass

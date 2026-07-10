@@ -368,7 +368,7 @@ const App = () => {
   }, [virtualBankroll, persistVirtualBankroll])
 
   const onGameClassChange = useCallback(() => {
-    const order: GameClassView[] = ['originals', 'roulette', 'tennis']
+    const order: GameClassView[] = ['roulette']
     setActiveGameClass((cur) => order[(order.indexOf(cur) + 1) % order.length])
   }, [])
 

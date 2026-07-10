@@ -131,11 +131,7 @@ export function RouletteWorkspace({
   }, [evolutionRecentNumbers, evolutionTableName])
 
   const storedRecentSpins = useMemo(
-    () =>
-      stats.results
-        .slice(-12)
-        .reverse()
-        .map((result) => result.winningNumber),
+    () => stats.results.reverse().map((result) => result.winningNumber),
     [stats.results]
   )
   const storedLatestSpin = stats.results[stats.results.length - 1] ?? null

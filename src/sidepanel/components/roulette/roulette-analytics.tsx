@@ -272,6 +272,9 @@ export const Analytics: FC<AnalyticsProps> = ({
     .reverse()
   const recentNumbers = evolutionRecentNumbers.slice(0, 501)
   const historyNumbers = evolutionRecentHistory.slice(0, 501)
+  // Both sources are newest-first. The connector entries are included in
+  // mostRecentNumbers, so they must stay visible when that card is folded
+  // into the history display below.
   const mostRecentNumbers = recentNumbers.concat(historyNumbers).slice(0, 13)
   const historyConnectorCount = Math.max(0, mostRecentNumbers.length - recentNumbers.length)
   const displayedHistoryNumbers = historyNumbers.slice(historyConnectorCount)
@@ -531,7 +534,7 @@ export const Analytics: FC<AnalyticsProps> = ({
     <div className='space-y-2 text-white p-1'>
       <div className='mx-auto space-y-0'>
         {/* Table History */}
-        {mostRecentNumbers.length > 0 && (
+        {/*{mostRecentNumbers.length > 0 && (
           <MostRecentNumbers
             highlightedIndexes={highlightedSignalIndexes}
             leadingSignalIndexes={highlightedLeadingSignalIndexes}
@@ -539,9 +542,10 @@ export const Analytics: FC<AnalyticsProps> = ({
             losingIndexes={highlightedLosingIndexes}
             numbers={mostRecentNumbers}
           />
-        )}
-        {displayedHistoryNumbers.length > 0 && (
+        )}*/}
+        {mostRecentNumbers.length > 0 && (
           <HistoryNumbers
+            recents={mostRecentNumbers}
             highlightedIndexes={highlightedSignalIndexes}
             leadingSignalIndexes={highlightedLeadingSignalIndexes}
             winningIndexes={highlightedWinningIndexes}
@@ -661,6 +665,7 @@ const MostRecentNumbers = ({
 }
 
 const HistoryNumbers = ({
+  recents,
   numbers,
   highlightedIndexes,
   leadingSignalIndexes,
@@ -668,6 +673,7 @@ const HistoryNumbers = ({
   losingIndexes,
   indexOffset = 0
 }: {
+  recents: number[]
   numbers: number[]
   highlightedIndexes: ReadonlySet<number>
   leadingSignalIndexes: ReadonlySet<number>
@@ -680,19 +686,32 @@ const HistoryNumbers = ({
       <div>
         <h2 className='font-okx text-xs font-medium uppercase text-neutral-200'>History</h2>
       </div>
-      <p className='font-okx text-xs text-neutral-300'>{numbers.length}</p>
+      <p className='font-okx text-xs text-neutral-300'>{recents.length + numbers.length}</p>
     </div>
     <div className='flex max-h-36 flex-wrap gap-0.75 overflow-y-auto'>
-      {numbers.map((number, index) => (
+      {recents.map((number, index) => (
         <LobbyNumber
-          key={`${number}-${index}`}
-          highlighted={highlightedIndexes.has(index + indexOffset)}
-          leadingSignal={leadingSignalIndexes.has(index + indexOffset)}
-          winning={winningIndexes.has(index + indexOffset)}
-          losing={losingIndexes.has(index + indexOffset)}
+          key={`recent-${number}-${index}`}
+          highlighted={highlightedIndexes.has(index)}
+          leadingSignal={leadingSignalIndexes.has(index)}
+          winning={winningIndexes.has(index)}
+          losing={losingIndexes.has(index)}
           number={number}
         />
       ))}
+      {numbers.map((number, index) => {
+        const displayIndex = index + indexOffset
+        return (
+          <LobbyNumber
+            key={`history-${number}-${index}`}
+            highlighted={highlightedIndexes.has(displayIndex)}
+            leadingSignal={leadingSignalIndexes.has(displayIndex)}
+            winning={winningIndexes.has(displayIndex)}
+            losing={losingIndexes.has(displayIndex)}
+            number={number}
+          />
+        )
+      })}
     </div>
   </div>
 )
@@ -717,12 +736,12 @@ const SignalOverview = ({ label, total, summary }: SignalOverviewProps) => {
         </div>
         <p className='text-xs font-okx text-neutral-300'>{total} captured</p>
       </div>
-      <div className='grid grid-cols-4 gap-1 text-xs'>
+      <div className='grid grid-cols-4 gap-1 w-full text-xs'>
         <StatCard
           title='Signals'
           value={
             <div className='flex items-end justify-between w-full'>
-              <span>{summary.signalsFound}</span>
+              <span className='font-okx text-base'>{summary.signalsFound}</span>
               <span className='font-light text-base text-slate-200'>{pendingSignals ? 'S' : 'I'}</span>
             </div>
           }
@@ -732,10 +751,17 @@ const SignalOverview = ({ label, total, summary }: SignalOverviewProps) => {
           title='Wins'
           value={
             <div className='flex items-end justify-between w-full'>
-              <span>{summary.wins}</span>
-              <span className='font-light text-base text-slate-100'>
+              <span className='font-okx text-base'>{summary.wins}</span>
+              <span
+                className={cn('font-poly font-medium text-xl text-rose-400', {
+                  'text-rose-500': winPct <= 89,
+                  'text-orange-400': winPct <= 85,
+                  'text-sky-400': winPct <= 80,
+                  'text-green-400': winPct <= 75,
+                  'text-emerald-400': winPct <= 65
+                })}>
                 {winPct.toFixed(0)}
-                <span className='font-thin text-xs'>%</span>
+                <span className='font-okx font-medium text-xs italic'>%</span>
               </span>
             </div>
           }
@@ -745,16 +771,20 @@ const SignalOverview = ({ label, total, summary }: SignalOverviewProps) => {
           title='Losses'
           value={
             <div className='flex items-end justify-between w-full'>
-              <span>{summary.losses}</span>
-              <span className='font-light text-base text-slate-100'>
+              <span className='font-okx text-base'>{summary.losses}</span>
+              <span className='font-poly font-medium text-xl text-slate-100'>
                 {lossPct.toFixed(0)}
-                <span className='font-thin text-xs'>%</span>
+                <span className='font-okx font-medium text-xs italic'>%</span>
               </span>
             </div>
           }
           color='rose'
         />
-        <StatCard title='Best Streak' value={summary.bestWinStreak} color='neutral' />
+        <StatCard
+          title='Best Streak'
+          value={<span className='font-okx font-medium text-base'>{summary.bestWinStreak}</span>}
+          color='neutral'
+        />
       </div>
       <div className='flex flex-wrap gap-1'>
         {summary.series.slice(0, 39).map((outcome, index) => (
@@ -773,11 +803,42 @@ const SignalOverview = ({ label, total, summary }: SignalOverviewProps) => {
         ))}
       </div>
       <p className='font-okx text-xs font-medium uppercase text-neutral-200 space-x-4 mt-1'>
-        <span>Zero {summary.zeroLosses} </span>
+        <span>Zero = {summary.zeroLosses} </span>
         <span>&middot;</span>
-        <span>Swipes {summary.losses}</span>
+        <span>Swipes = {summary.losses - summary.zeroLosses}</span>
       </p>
     </div>
+  )
+}
+
+const LobbyNumber: FC<{
+  number: number
+  highlighted?: boolean
+  leadingSignal?: boolean
+  winning?: boolean
+  losing?: boolean
+}> = ({ number, highlighted = false, leadingSignal = false, winning = false, losing = false }) => {
+  const color =
+    winning && leadingSignal
+      ? 'bg-pink-400 text-neutral-50'
+      : winning
+        ? 'bg-yellow-300 text-neutral-900'
+        : losing
+          ? 'bg-red-500 text-white'
+          : leadingSignal
+            ? 'bg-pink-400 text-neutral-50'
+            : highlighted
+              ? 'bg-sky-600 text-neutral-100'
+              : number === 0
+                ? 'bg-emerald-700 text-white'
+                : RED_NUMBERS.includes(number)
+                  ? 'bg-neutral-100 text-red-600'
+                  : 'bg-neutral-500 text-white'
+  return (
+    <span
+      className={`${color} min-w-7 max-w-9 min-h-5 max-h-5 rounded-none flex items-center justify-center text-[13px] font-semibold`}>
+      {number}
+    </span>
   )
 }
 
@@ -793,14 +854,14 @@ interface StatCardProps {
 
 const STAT_VALUE_CLASS_NAME: Record<NonNullable<StatCardProps['color']>, string> = {
   emerald: 'bg-linear-to-r from-emerald-400 to-emerald-300 bg-clip-text text-transparent',
-  neutral: 'bg-linear-to-r from-neutral-200 to-neutral-400 bg-clip-text text-transparent',
-  rose: 'bg-linear-to-r from-red-200 to-red-200 bg-clip-text text-transparent',
+  neutral: 'bg-linear-to-r from-neutral-200 to-neutral-200 bg-clip-text text-transparent',
+  rose: 'text-rose-200',
   gold: 'bg-linear-to-r from-yellow-300 to-yellow-200 bg-clip-text text-transparent',
   sky: 'bg-linear-to-r from-sky-500 to-sky-500 bg-clip-text text-transparent'
 }
 
 const StatCard: FC<StatCardProps> = ({ title, value, trend, color = 'emerald', extra }) => (
-  <div className={cn('rounded-xs p-1.5 bg-neutral-700 space-y-1.5')}>
+  <div className={cn('rounded-xs p-2 pb-0 bg-neutral-800 space-y-1.5')}>
     <div className='flex items-center justify-between'>
       <span className='text-[9px] font-ios text-neutral-300 uppercase tracking-widest'>{title}</span>
       {extra}
@@ -893,24 +954,6 @@ interface PercentageBarProps {
   count: number
 }
 
-const PercentageBar: FC<PercentageBarProps> = ({ label, percentage, color, count }) => (
-  <div className='group'>
-    <div className='flex justify-between items-center mb-1.5'>
-      <span className='text-xs text-neutral-300'>{label}</span>
-      <div className='flex items-center gap-2'>
-        <span className='text-xs text-neutral-500'>({count})</span>
-        <span className='text-sm font-semibold text-neutral-200'>{percentage.toFixed(1)}%</span>
-      </div>
-    </div>
-    <div className='h-2 bg-neutral-700/50 rounded-full overflow-hidden'>
-      <div
-        className={`h-full ${color} rounded-full transition-all duration-700 ease-out group-hover:shadow-lg`}
-        style={{ width: `${Math.min(percentage, 100)}%` }}
-      />
-    </div>
-  </div>
-)
-
 const VPctBar: FC<PercentageBarProps & { cols?: string }> = ({ label, percentage, color, count, cols }) => (
   <div className={cn('group', cols)}>
     <div className={cn('relative h-10 bg-neutral-700 rounded-t-sm overflow-hidden flex items-end')}>
@@ -993,36 +1036,23 @@ const NumberBadge: FC<NumberBadgeProps> = ({ number, count, isHot = true, showCo
   )
 }
 
-const LobbyNumber: FC<{
-  number: number
-  highlighted?: boolean
-  leadingSignal?: boolean
-  winning?: boolean
-  losing?: boolean
-}> = ({ number, highlighted = false, leadingSignal = false, winning = false, losing = false }) => {
-  const color =
-    winning && leadingSignal
-      ? 'bg-pink-400 text-neutral-50'
-      : winning
-        ? 'bg-yellow-300 text-neutral-900'
-        : losing
-          ? 'bg-red-500 text-white'
-          : leadingSignal
-            ? 'bg-pink-400 text-neutral-50'
-            : highlighted
-              ? 'bg-sky-600 text-neutral-100'
-              : number === 0
-                ? 'bg-emerald-700 text-white'
-                : RED_NUMBERS.includes(number)
-                  ? 'bg-neutral-100 text-red-600'
-                  : 'bg-neutral-500 text-white'
-  return (
-    <span
-      className={`${color} min-w-6 max-w-8 min-h-5 max-h-5 rounded-none flex items-center justify-center text-[13px] font-semibold`}>
-      {number}
-    </span>
-  )
-}
+const PercentageBar: FC<PercentageBarProps> = ({ label, percentage, color, count }) => (
+  <div className='group'>
+    <div className='flex justify-between items-center mb-1.5'>
+      <span className='text-xs text-neutral-300'>{label}</span>
+      <div className='flex items-center gap-2'>
+        <span className='text-xs text-neutral-500'>({count})</span>
+        <span className='text-sm font-semibold text-neutral-200'>{percentage.toFixed(1)}%</span>
+      </div>
+    </div>
+    <div className='h-2 bg-neutral-700/50 rounded-full overflow-hidden'>
+      <div
+        className={`h-full ${color} rounded-full transition-all duration-700 ease-out group-hover:shadow-lg`}
+        style={{ width: `${Math.min(percentage, 100)}%` }}
+      />
+    </div>
+  </div>
+)
 
 interface LobbyHistoriesProps {
   data: { tableId: string; numbers: number[] }[]

@@ -39,7 +39,7 @@ export interface LobbyTableHistory {
 
 interface RouletteSpinResultBase {
   id: string
-  provider: 'stake' | 'bet88'
+  provider: 'stake' | 'bet88' | 'okbet'
   source: 'evolution' | 'pragmatic-play'
   game: 'roulette'
   description: string
@@ -62,7 +62,7 @@ export interface EvolutionRouletteSpinResult extends RouletteSpinResultBase {
 }
 
 export interface PragmaticPlayRouletteSpinResult extends RouletteSpinResultBase {
-  provider: 'bet88'
+  provider: 'bet88' | 'okbet'
   source: 'pragmatic-play'
   eventType: 'gameresult'
   score: string

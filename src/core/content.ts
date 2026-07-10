@@ -4,6 +4,7 @@ import type { RouletteLobbyHistoriesCapture } from '../lib/rouletteLobbyHistorie
 import {
   normalizeStoredData,
   normalizeVirtualBankroll,
+  OkBet,
   summarizeResults,
   type GameResult,
   type SupportedGameKey
@@ -34,6 +35,7 @@ interface InterceptedNetworkPayload {
 type UnknownRecord = Record<string, unknown>
 type StakeAction = 'bet' | 'roll' | 'next' | 'cashout'
 type Bet88Action = 'bet' | 'play'
+type OkBetAction = 'bet' | 'play'
 type CapturedRouletteMessage = EvoMessage | PragmaticPlayMessage
 
 let lastChipSignature = ''
@@ -88,7 +90,7 @@ function parseBet88HistoryItem(item: Bet88HistoryItem, fallbackTimestamp: number
   const baseResult = {
     timestamp,
     result,
-    provider: 'bet88' as const,
+    provider: 'okbet' as const,
     game,
     amount,
     payout,
@@ -548,8 +550,8 @@ function resolveStakePayout(game: SupportedGameKey, amount: number, payout: numb
 
 function detectBet88Route(
   url: string,
-  providerData: Bet88<unknown>
-): { game: SupportedGameKey; action: Bet88Action } | null {
+  providerData: Bet88<unknown> | OkBet<unknown>
+): { game: SupportedGameKey; action: Bet88Action | OkBetAction } | null {
   const match = url.toLowerCase().match(/\/game\/(keno|limbo|dice|mines)\/(bet|play)\b/)
   if (match && isSupportedGameKey(match[1])) {
     return {
@@ -715,7 +717,7 @@ function parseBet88Result(payload: InterceptedNetworkPayload): GameResult | null
   const baseResult = {
     timestamp: payload.timestamp ?? Date.now(),
     result,
-    provider: 'bet88' as const,
+    provider: 'okbet' as const,
     game: route.game,
     action: route.action,
     amount,
@@ -725,7 +727,7 @@ function parseBet88Result(payload: InterceptedNetworkPayload): GameResult | null
     auto: typeof requestBody?.auto === 'boolean' ? requestBody.auto : undefined,
     roundId: providerData.roundId,
     active: providerData.active,
-    multiplier: providerData.multiplier,
+
     winAmount: providerData.winAmount,
     playerId: providerData.playerId,
     url: window.location.href
@@ -868,7 +870,7 @@ function parseRouletteResult(payload: InterceptedNetworkPayload): RouletteSpinRe
 
     return {
       id: providerData.gameresult.id,
-      provider: 'bet88',
+      provider: 'okbet',
       source: 'pragmatic-play',
       game: 'roulette',
       eventType: 'gameresult',

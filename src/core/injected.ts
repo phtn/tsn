@@ -75,19 +75,12 @@
 
   function looksLikeEvoTableStateMessage(value: unknown): boolean {
     return (
-      isRecord(value) &&
-      value.type === 'roulette.tableState' &&
-      typeof value.id === 'string' &&
-      isRecord(value.args)
+      isRecord(value) && value.type === 'roulette.tableState' && typeof value.id === 'string' && isRecord(value.args)
     )
   }
 
   function looksLikeLobbyHistoriesMessage(value: unknown): boolean {
-    return (
-      isRecord(value) &&
-      value.type === 'lobby.histories' &&
-      isRecord(value.args)
-    )
+    return isRecord(value) && value.type === 'lobby.histories' && isRecord(value.args)
   }
 
   function looksLikePragmaticRouletteMessage(value: unknown): boolean {
@@ -490,12 +483,8 @@
         fullClick(el)
         window.postMessage({ type: 'EVO_CLICK_RESULT', requestId, ok: true, selector, visible }, '*')
       } else {
-        window.postMessage(
-          { type: 'EVO_CLICK_RESULT', requestId, ok: false, error: `Not found: ${selector}` },
-          '*'
-        )
+        window.postMessage({ type: 'EVO_CLICK_RESULT', requestId, ok: false, error: `Not found: ${selector}` }, '*')
       }
     }
   })
-
 })()

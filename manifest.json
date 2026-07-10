@@ -19,7 +19,9 @@
         "*://*.evolution.com/*",
         "*://*.evolutiongaming.com/*",
         "*://*.ezugi.com/*",
-        "*://*.pragmaticplaylive.net/*"
+        "*://*.pragmaticplaylive.net/*",
+        "*://okbet.com/*",
+        "*://*.okbet.com/*"
       ],
       "js": ["dist/content.js"],
       "run_at": "document_start",
