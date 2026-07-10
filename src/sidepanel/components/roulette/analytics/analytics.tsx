@@ -1,6 +1,6 @@
 import type { LobbyTableHistory, RouletteSpinResult } from '@/src/types/roulette'
 import { FC, useEffect, useMemo, useRef } from 'react'
-import { postJsonToEndpoint } from '../../../lib/relayEndpoints'
+import { postJsonToEndpoint } from '../../../../lib/relayEndpoints'
 import {
   BLACK_NUMBERS,
   getKimQuadrantsContainingPair,
@@ -12,14 +12,14 @@ import {
   selectKimQuadrant,
   TIER_G,
   VOISINS_G
-} from '../../../lib/roulette'
-import { cn } from '../../../lib/utils'
-import { ClassName } from '../../../types'
-import { HistoryNumbers, SignalOverview } from './analytics/history'
-import { HotAndColdNumbers, StatsOverview, VPctOverview } from './analytics/stats'
-import { SignalOutcome, SignalSummary } from './analytics/types'
-import { Stats } from './types'
-import { getHotNumbers } from './utils'
+} from '../../../../lib/roulette'
+import { cn } from '../../../../lib/utils'
+import { ClassName } from '../../../../types'
+import { Stats } from '../types'
+import { getHotNumbers } from '../utils'
+import { HistoryNumbers, SignalOverview } from './history'
+import { HotAndColdNumbers, StatsOverview, VPctOverview } from './stats'
+import { SignalOutcome, SignalSummary } from './types'
 
 export const cardClassName: ClassName = `border-zinc-800 bg-[linear-gradient(180deg,rgba(255,255,255,0.01),rgba(255,255,255,0)),linear-gradient(180deg,rgba(31,35,41,0.96),rgba(12,14,19,0.9))]`
 

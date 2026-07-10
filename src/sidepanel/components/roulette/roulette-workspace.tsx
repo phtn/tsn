@@ -4,7 +4,7 @@ import type { RouletteLobbyHistoriesEndpointConfig } from '../../../lib/roulette
 import type { PanelStatus } from '../../../types'
 import type { LobbyTableHistory, RouletteSpinResult, RouletteStoredData, TableState } from '../../../types/roulette'
 import type { RouletteResultEndpointConfig } from '../../lib/rouletteSpinResults'
-import { Analytics } from './roulette-analytics'
+import { Analytics } from './analytics/analytics'
 import { RouletteVirtualBoard } from './roulette-virtual-board'
 
 interface RouletteWorkspaceProps {
