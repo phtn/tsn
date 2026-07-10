@@ -7,7 +7,7 @@ export function getQuadTone(value: number | undefined, isMember: boolean, isActi
   }
 
   return RED_NUMBERS_SET.has(value) && (isMember || isActive)
-    ? 'border-white bg-[#B51B13] text-neutral-50'
+    ? 'border-white bg-[#B51B13] text-neutral-50 rounded-none'
     : 'text-slate-100'
 }
 

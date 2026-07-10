@@ -40,6 +40,7 @@ type CapturedRouletteMessage = EvoMessage | PragmaticPlayMessage
 
 let lastChipSignature = ''
 let lastRecentNumbersSignature = ''
+let lastEvoluReviewNumbersSignature = ''
 let lastLobbyHistoriesSignature = ''
 
 const script = document.createElement('script')
@@ -1466,6 +1467,52 @@ function syncRecentNumbers(): void {
   })
 }
 
+function readEvolutionNumberContainer(container: HTMLElement): number | null {
+  const numberElement = container.querySelector<HTMLElement>('[data-role^="number-"]')
+  const dataRole = numberElement?.getAttribute('data-role')
+  const dataRoleMatch = dataRole?.match(/^number-(\d+)$/)
+  const raw = dataRoleMatch?.[1] ?? numberElement?.textContent?.trim() ?? container.textContent?.trim()
+  const [value] = raw ? extractRouletteNumbersFromText(raw) : []
+
+  return typeof value === 'number' ? value : null
+}
+
+function scrapeEvolutionReviewNumberArrays(): {
+  recent: number[]
+  statistics: number[]
+  combined: number[]
+} {
+  const drawer = deepQuery(document, '[data-role="statistic-drawer"]')
+  const scope: ParentNode = drawer ?? document
+  const recent = deepQueryAll(scope, '[data-role="recent-number"], [data-role^="recent-number-"]')
+    .map(readEvolutionNumberContainer)
+    .filter((value): value is number => value !== null)
+  const statistics = deepQueryAll(scope, '[data-role="statistics"]')
+    .map(readEvolutionNumberContainer)
+    .filter((value): value is number => value !== null)
+
+  return {
+    recent,
+    statistics,
+    combined: [...recent, ...statistics]
+  }
+}
+
+function syncEvolutionReviewNumberArrays(): void {
+  const arrays = scrapeEvolutionReviewNumberArrays()
+  const signature = JSON.stringify(arrays)
+  if (signature === lastEvoluReviewNumbersSignature) return
+
+  lastEvoluReviewNumbersSignature = signature
+  // Review-only snapshots; the production evolutionRecent* keys above stay unchanged.
+  chrome.storage.local.set({
+    lastEvoluReviewNumbersSignature: signature,
+    evolutionReviewRecentNumbers: arrays.recent,
+    evolutionReviewStatisticsNumbers: arrays.statistics,
+    evolutionReviewCombinedNumbers: arrays.combined
+  })
+}
+
 function initEvolutionChipCapture(): void {
   const root = document.documentElement
   if (!root) {
@@ -1478,6 +1525,7 @@ function initEvolutionChipCapture(): void {
     syncRebetVisible()
     syncBettingOpen()
     syncRecentNumbers()
+    syncEvolutionReviewNumberArrays()
   })
 
   observer.observe(root, {
@@ -1494,6 +1542,7 @@ function initEvolutionChipCapture(): void {
       syncRebetVisible()
       syncBettingOpen()
       syncRecentNumbers()
+      syncEvolutionReviewNumberArrays()
     },
     { once: true }
   )
@@ -1501,6 +1550,7 @@ function initEvolutionChipCapture(): void {
   syncRebetVisible()
   syncBettingOpen()
   syncRecentNumbers()
+  syncEvolutionReviewNumberArrays()
 }
 
 initEvolutionChipCapture()

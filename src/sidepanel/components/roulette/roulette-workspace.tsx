@@ -5,7 +5,6 @@ import type { PanelStatus } from '../../../types'
 import type { LobbyTableHistory, RouletteSpinResult, RouletteStoredData, TableState } from '../../../types/roulette'
 import type { RouletteResultEndpointConfig } from '../../lib/rouletteSpinResults'
 import { Analytics } from './roulette-analytics'
-import { RouletteHeader } from './roulette-header'
 import { RouletteVirtualBoard } from './roulette-virtual-board'
 
 interface RouletteWorkspaceProps {
@@ -16,6 +15,10 @@ interface RouletteWorkspaceProps {
   evolutionBettingOpen: boolean
   evolutionRecentNumbers: number[]
   evolutionRecentHistory: number[]
+  evolutionReviewRecentNumbers: number[]
+  evolutionReviewStatisticsNumbers: number[]
+  evolutionReviewCombinedNumbers: number[]
+  lastEvoluReviewNumbersSignature: string
   evolutionTableState: TableState | null
   evolutionTableName: string | null
   evolutionLobbyHistories: LobbyTableHistory[]
@@ -36,6 +39,10 @@ export function RouletteWorkspace({
   evolutionBettingOpen,
   evolutionRecentNumbers,
   evolutionRecentHistory,
+  evolutionReviewRecentNumbers,
+  evolutionReviewStatisticsNumbers,
+  evolutionReviewCombinedNumbers,
+  lastEvoluReviewNumbersSignature,
   evolutionTableState,
   evolutionTableName,
   evolutionLobbyHistories,
@@ -142,7 +149,7 @@ export function RouletteWorkspace({
 
   return (
     <div className='space-y-0 pb-6 bg-[#1F2020]'>
-      <RouletteHeader tableId={evolutionTableName ?? undefined} latestSpin={latestSpin} previewSpins={previewSpins} />
+      {/*<RouletteHeader tableId={evolutionTableName ?? undefined} latestSpin={latestSpin} previewSpins={previewSpins} />*/}
       <RouletteVirtualBoard
         status={status}
         winningNumbers={winningNumbers}
@@ -155,7 +162,7 @@ export function RouletteWorkspace({
       <Analytics
         lobbyHistories={evolutionLobbyHistories}
         evolutionRecentNumbers={evolutionRecentNumbers}
-        evolutionRecentHistory={evolutionRecentHistory}
+        evolutionRecentHistory={evolutionReviewCombinedNumbers}
         onReset={handleReset}
         results={stats.results}
         latestSpin={latestSpin}

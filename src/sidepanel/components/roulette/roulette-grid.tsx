@@ -49,14 +49,14 @@ export const RouletteGrid = ({
   setHoveredQuadrant
 }: RouletteGridProps) => {
   return (
-    <div className='mt-4 grid grid-cols-[28px_1fr] rounded-s-lg rounded-e-sm gap-0.5 bg-white/40'>
+    <div className='mt-4 grid grid-cols-[28px_1fr] rounded-s-lg rounded-e-sm gap-1 bg-white/40'>
       <button
         type='button'
         disabled={!selectedChip}
         title='Place zero bet on Evolution'
         onClick={() => placeEvolutionBets([0])}
         className={cn(
-          'relative flex items-center justify-center rounded-s-lg rounded-e-xs border font-semibold transition-all disabled:cursor-default',
+          'relative flex items-center justify-center rounded-s-sm rounded-e-xs border font-semibold transition-all disabled:cursor-default',
           getNumberTone(0),
           selectedChip && 'cursor-pointer hover:border-white',
           zeroStake > 0 && 'ring-2 ring-emerald-300/75 ring-offset-2 ring-offset-slate-950',
@@ -125,19 +125,19 @@ export const RouletteGrid = ({
                     interactiveQuadrant ? `${formatQuadrantLabel(interactiveQuadrant)} · set start quadrant` : undefined
                   }
                   className={cn(
-                    'mr-0.75 relative h-8.75 w-8.75 flex items-center justify-center aspect-square rounded-xs border disabled:cursor-default',
-                    'transition-all duration-100 ease-in-out ',
+                    'mr-0.75 relative h-8.5 w-10.5 flex items-center justify-center aspect-square rounded-none border disabled:cursor-default',
                     getNumberTone(value),
                     getQuadTone(value, isHoveredQuadrantMember, isActive),
                     isActive &&
-                      'ring-2 ring-emerald-400 border-emerald-400 ring-offset-0 ring-offset-lime-emerald rounded-px',
+                      'ring-2 ring-emerald-400 border-emerald-400 ring-offset-0 ring-offset-lime-emerald rounded-none',
                     isActive && hotRank && round >= 4 && 'animate-pulse',
                     isLatest && 'border-amber-300 shadow-[0_0_0_1px_rgba(252,211,77,0.55)]',
-                    isHoveredQuadrantMember && 'ring-2 ring-white/80 ring-offset-0 ring-offset-slate-950',
+                    isHoveredQuadrantMember && 'ring-2 ring-white ring-offset-0 ring-offset-slate-950',
                     isStartingQuadrantTrigger && 'cursor-pointer',
-                    isSelectedStartingQuadrant && 'border-emerald-400'
+                    isSelectedStartingQuadrant && 'border-emerald-400',
+                    'transition-all duration-200 ease-in-out'
                   )}>
-                  <span className='text-lg font-semibold drop-shadow-xs'>{value}</span>
+                  <span className='font-sans font-semibold text-lg drop-shadow-xs'>{value}</span>
                   {isActive && effectiveMultiplier > 1 ? (
                     <span
                       className={cn(

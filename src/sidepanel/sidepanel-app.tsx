@@ -88,6 +88,10 @@ const App = () => {
   const [evolutionBettingOpen, setEvolutionBettingOpen] = useState<boolean>(false)
   const [evolutionRecentNumbers, setEvolutionRecentNumbers] = useState<number[]>([])
   const [evolutionRecentHistory, setEvolutionRecentHistory] = useState<number[]>([])
+  const [evolutionReviewRecentNumbers, setEvolutionReviewRecentNumbers] = useState<number[]>([])
+  const [evolutionReviewStatisticsNumbers, setEvolutionReviewStatisticsNumbers] = useState<number[]>([])
+  const [evolutionReviewCombinedNumbers, setEvolutionReviewCombinedNumbers] = useState<number[]>([])
+  const [lastEvoluReviewNumbersSignature, setLastEvoluReviewNumbersSignature] = useState<string>('')
   const [evolutionTableState, setEvolutionTableState] = useState<TableState | null>(null)
   const [evolutionTableName, setEvolutionTableName] = useState<string | null>(null)
   const [evolutionLobbyHistories, setEvolutionLobbyHistories] = useState<EvolutionLobbyHistory[]>([])
@@ -166,7 +170,11 @@ const App = () => {
         'evolutionTableState',
         'evolutionTableName',
         'evolutionLobbyHistories',
-        'evolutionLobbyHistoriesCapture'
+        'evolutionLobbyHistoriesCapture',
+        'evolutionReviewRecentNumbers',
+        'evolutionReviewStatisticsNumbers',
+        'evolutionReviewCombinedNumbers',
+        'lastEvoluReviewNumbersSignature'
       ],
       (data) => {
         const chips = Array.isArray(data.evolutionChips)
@@ -178,6 +186,11 @@ const App = () => {
               .filter((v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 36)
               .slice(0, 500)
           : []
+        const reviewRecentNumbers = normalizeEvolutionRecentNumbers(data.evolutionReviewRecentNumbers)
+        const reviewStatisticsNumbers = normalizeEvolutionRecentNumbers(data.evolutionReviewStatisticsNumbers)
+        const reviewCombinedNumbers = normalizeEvolutionRecentNumbers(data.evolutionReviewCombinedNumbers)
+        const reviewSignature =
+          typeof data.lastEvoluReviewNumbersSignature === 'string' ? data.lastEvoluReviewNumbersSignature : ''
         const lobbyHistories = normalizeEvolutionLobbyHistories(data.evolutionLobbyHistories)
         const tableName =
           typeof data.evolutionTableName === 'string' && data.evolutionTableName.trim().length > 0
@@ -197,6 +210,16 @@ const App = () => {
             sameNumbers(previous, activeTableRecentNumbers) ? previous : activeTableRecentNumbers
           )
           setEvolutionRecentHistory(recentHistory as number[])
+          setEvolutionReviewRecentNumbers((previous) =>
+            sameNumbers(previous, reviewRecentNumbers) ? previous : reviewRecentNumbers
+          )
+          setEvolutionReviewStatisticsNumbers((previous) =>
+            sameNumbers(previous, reviewStatisticsNumbers) ? previous : reviewStatisticsNumbers
+          )
+          setEvolutionReviewCombinedNumbers((previous) =>
+            sameNumbers(previous, reviewCombinedNumbers) ? previous : reviewCombinedNumbers
+          )
+          setLastEvoluReviewNumbersSignature((previous) => (previous === reviewSignature ? previous : reviewSignature))
           setEvolutionTableState(
             typeof data.evolutionTableState === 'string' ? (data.evolutionTableState as TableState) : null
           )
@@ -412,6 +435,10 @@ const App = () => {
         changes.evolutionBettingOpen ||
         changes.evolutionRecentNumbers ||
         changes.evolutionRecentHistory ||
+        changes.evolutionReviewRecentNumbers ||
+        changes.evolutionReviewStatisticsNumbers ||
+        changes.evolutionReviewCombinedNumbers ||
+        changes.lastEvoluReviewNumbersSignature ||
         changes.evolutionTableState ||
         changes.evolutionTableName ||
         changes.evolutionLobbyHistories ||
@@ -555,6 +582,10 @@ const App = () => {
           evolutionBettingOpen={evolutionBettingOpen}
           evolutionRecentNumbers={evolutionRecentNumbers}
           evolutionRecentHistory={evolutionRecentHistory}
+          evolutionReviewRecentNumbers={evolutionReviewRecentNumbers}
+          evolutionReviewStatisticsNumbers={evolutionReviewStatisticsNumbers}
+          evolutionReviewCombinedNumbers={evolutionReviewCombinedNumbers}
+          lastEvoluReviewNumbersSignature={lastEvoluReviewNumbersSignature}
           evolutionTableState={evolutionTableState}
           evolutionTableName={evolutionTableName}
           evolutionLobbyHistories={evolutionLobbyHistories}

@@ -133,9 +133,12 @@ interface StatsProps {
 const Stat = ({ children, cols = 2 }: StatsProps) => {
   return (
     <div
-      className={cn('rounded-sm border-[0.33px] border-white/15 bg-white/8 backdrop-blur-md p-1.25 col-span-2', {
-        'col-span-1': cols === 1
-      })}>
+      className={cn(
+        'rounded-xs border-[0.33px] border-white/15 bg-white/8 backdrop-blur-md px-1.25 pt-1.5 pb-0 col-span-2',
+        {
+          'col-span-1': cols === 1
+        }
+      )}>
       {children}
     </div>
   )

@@ -1,5 +1,5 @@
 import type { LobbyTableHistory, RouletteSpinResult } from '@/src/types/roulette'
-import { FC, type ReactNode, useEffect, useMemo, useRef } from 'react'
+import { FC, useEffect, useMemo, useRef } from 'react'
 import { postJsonToEndpoint } from '../../../lib/relayEndpoints'
 import {
   BLACK_NUMBERS,
@@ -15,7 +15,9 @@ import {
 } from '../../../lib/roulette'
 import { cn } from '../../../lib/utils'
 import { ClassName } from '../../../types'
-import { tmap } from './tables'
+import { HistoryNumbers, SignalOverview } from './analytics/history'
+import { HotAndColdNumbers, StatsOverview, VPctOverview } from './analytics/stats'
+import { SignalOutcome, SignalSummary } from './analytics/types'
 import { Stats } from './types'
 import { getHotNumbers } from './utils'
 
@@ -31,23 +33,6 @@ type AnalyticsProps = {
   latestSpin: RouletteSpinResult | null
   rouletteResultEndpointUrl?: string
 }
-
-interface SignalSummary {
-  signalsFound: number
-  wins: number
-  losses: number
-  zeroLosses: number
-  bestWinStreak: number
-  currentWinStreak: number
-  winStreaks: number[]
-  signalIndexes: number[]
-  leadingSignalIndexes: number[]
-  winningIndexes: number[]
-  losingIndexes: number[]
-  series: SignalOutcome[]
-}
-
-type SignalOutcome = 'W' | 'L' | '0'
 
 type NumberState = {
   index: number
@@ -279,7 +264,8 @@ export const Analytics: FC<AnalyticsProps> = ({
   const historyConnectorCount = Math.max(0, mostRecentNumbers.length - recentNumbers.length)
   const displayedHistoryNumbers = historyNumbers.slice(historyConnectorCount)
   const allNumbersFromStart = recentNumbers.concat(historyNumbers).reverse()
-  const signalSummary = useMemo(() => mapAllNumbersFromStart(allNumbersFromStart), [allNumbersFromStart])
+  const allStatsFromStart = evolutionRecentHistory
+  const signalSummary = useMemo(() => mapAllNumbersFromStart(evolutionRecentHistory), [evolutionRecentHistory])
   const highlightedSignalIndexes = useMemo(() => {
     const displayCount = recentNumbers.length + historyNumbers.length
     return new Set(signalSummary.signalIndexes.map((index) => displayCount - 1 - index))
@@ -531,19 +517,10 @@ export const Analytics: FC<AnalyticsProps> = ({
   }, [winningNumbers])
 
   return (
-    <div className='space-y-2 text-white p-1'>
+    <div className='space-y-2 text-white p-1 mt-2'>
       <div className='mx-auto space-y-0'>
         {/* Table History */}
-        {/*{mostRecentNumbers.length > 0 && (
-          <MostRecentNumbers
-            highlightedIndexes={highlightedSignalIndexes}
-            leadingSignalIndexes={highlightedLeadingSignalIndexes}
-            winningIndexes={highlightedWinningIndexes}
-            losingIndexes={highlightedLosingIndexes}
-            numbers={mostRecentNumbers}
-          />
-        )}*/}
-        {mostRecentNumbers.length > 0 && (
+        {evolutionRecentHistory.length > 0 && (
           <HistoryNumbers
             recents={mostRecentNumbers}
             highlightedIndexes={highlightedSignalIndexes}
@@ -551,12 +528,15 @@ export const Analytics: FC<AnalyticsProps> = ({
             winningIndexes={highlightedWinningIndexes}
             losingIndexes={highlightedLosingIndexes}
             indexOffset={recentNumbers.length + historyConnectorCount}
-            numbers={displayedHistoryNumbers}
+            numbers={evolutionRecentHistory}
           />
         )}
-        {allNumbersFromStart.length > 0 && (
-          <SignalOverview label={`Analysis`} total={allNumbersFromStart.length} summary={signalSummary} />
+        {evolutionRecentHistory.length > 0 && (
+          <SignalOverview total={mostRecentNumbers.length + evolutionRecentHistory.length} summary={signalSummary} />
         )}
+
+        {/* Spacer */}
+        <div id='h-pad' className='h-16 mt-8 w-full rounded-sm bg-neutral-950' />
 
         {/* Hot & Cold Numbers */}
         <HotAndColdNumbers hotNumbers={stats.hotNumbers} coldNumbers={stats.coldNumbers} />
@@ -566,34 +546,6 @@ export const Analytics: FC<AnalyticsProps> = ({
         {/* Stats Overview */}
         <StatsOverview stats={stats} />
 
-        {/* Streets Overview */}
-        {/*<div className={cn('rounded-lg px-4 pb-3 bg-neutral-700')}>
-          <h2 className='font-okx font-semibold text-white uppercase py-2'>Streets</h2>
-          <div className='grid grid-cols-12 gap-1.5'>
-            {stats.streets.map((street, idx) => {
-              const start = idx * 3 + 1
-              return (
-                <div key={idx} className=' bg-neutral-800/50 pt-2 pb-1 rounded-full flex items-center justify-center '>
-                  <div className='relative z-10 h-20 font-medium text-neutral-300 text-sm text-center'>
-                    <div className='absolute z-0 bottom-0 rounded-full left-0 w-7 h-18'>
-                      <div
-                        className='absolute bottom-0 w-7 bg-linear-to-t from-emerald-400/50 via-emerald-400/40 to-emerald-30 rounded-full transition-all duration-500'
-                        style={{ height: `${Math.min(street.pct * 3 * 2, 100)}%` }}
-                      />
-                    </div>
-                    <p className='font-okx text-center relative z-10'>{start + 2}</p>
-                    <p className='font-okx text-center relative z-10'>{start + 1}</p>
-                    <p className='font-okx text-center relative z-10'>{start}</p>
-                    <p className='font-okx font-semibold text-emerald-100 text-xs text-center relative z-10 w-7'>
-                      {street.pct.toFixed(1)}
-                    </p>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-*/}
         {/* RESET */}
         <div className={cn('rounded-lg border border-white/8 p-4', cardClassName)}>
           <div className='flex items-end justify-between gap-4'>
@@ -624,460 +576,3 @@ export const Analytics: FC<AnalyticsProps> = ({
     </div>
   )
 }
-
-const MostRecentNumbers = ({
-  numbers,
-  highlightedIndexes,
-  leadingSignalIndexes,
-  winningIndexes,
-  losingIndexes
-}: {
-  numbers: number[]
-  highlightedIndexes: ReadonlySet<number>
-  leadingSignalIndexes: ReadonlySet<number>
-  winningIndexes: ReadonlySet<number>
-  losingIndexes: ReadonlySet<number>
-}) => {
-  const displayedNumbers = numbers.slice(0, 13)
-
-  return (
-    <div className={cn('rounded-sm p-2 space-y-2 bg-neutral-900')}>
-      <div className='flex items-center justify-between gap-3'>
-        <div>
-          <h2 className='font-okx font-medium text-neutral-200 text-xs uppercase'>Recents</h2>
-        </div>
-        <p className='font-okx text-neutral-300 text-xs'>{displayedNumbers.length}</p>
-      </div>
-      <div className='flex max-h-60 flex-wrap gap-0.75 overflow-y-auto pr-1'>
-        {displayedNumbers.map((number, index) => (
-          <LobbyNumber
-            key={`${number}-${index}`}
-            highlighted={highlightedIndexes.has(index)}
-            leadingSignal={leadingSignalIndexes.has(index)}
-            winning={winningIndexes.has(index)}
-            losing={losingIndexes.has(index)}
-            number={number}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-
-const HistoryNumbers = ({
-  recents,
-  numbers,
-  highlightedIndexes,
-  leadingSignalIndexes,
-  winningIndexes,
-  losingIndexes,
-  indexOffset = 0
-}: {
-  recents: number[]
-  numbers: number[]
-  highlightedIndexes: ReadonlySet<number>
-  leadingSignalIndexes: ReadonlySet<number>
-  winningIndexes: ReadonlySet<number>
-  losingIndexes: ReadonlySet<number>
-  indexOffset?: number
-}) => (
-  <div className={cn('rounded-sm p-2 space-y-2 bg-neutral-900')}>
-    <div className='flex items-center justify-between gap-3'>
-      <div>
-        <h2 className='font-okx text-xs font-medium uppercase text-neutral-200'>History</h2>
-      </div>
-      <p className='font-okx text-xs text-neutral-300'>{recents.length + numbers.length}</p>
-    </div>
-    <div className='flex max-h-36 flex-wrap gap-0.75 overflow-y-auto'>
-      {recents.map((number, index) => (
-        <LobbyNumber
-          key={`recent-${number}-${index}`}
-          highlighted={highlightedIndexes.has(index)}
-          leadingSignal={leadingSignalIndexes.has(index)}
-          winning={winningIndexes.has(index)}
-          losing={losingIndexes.has(index)}
-          number={number}
-        />
-      ))}
-      {numbers.map((number, index) => {
-        const displayIndex = index + indexOffset
-        return (
-          <LobbyNumber
-            key={`history-${number}-${index}`}
-            highlighted={highlightedIndexes.has(displayIndex)}
-            leadingSignal={leadingSignalIndexes.has(displayIndex)}
-            winning={winningIndexes.has(displayIndex)}
-            losing={losingIndexes.has(displayIndex)}
-            number={number}
-          />
-        )
-      })}
-    </div>
-  </div>
-)
-
-interface SignalOverviewProps {
-  label: string
-  total: number
-  summary: SignalSummary
-}
-
-const SignalOverview = ({ label, total, summary }: SignalOverviewProps) => {
-  const resolvedSignals = summary.wins + summary.losses
-  const pendingSignals = Math.max(0, summary.signalsFound - resolvedSignals)
-  const winPct = resolvedSignals > 0 ? (summary.wins / resolvedSignals) * 100 : 0
-  const lossPct = resolvedSignals > 0 ? (summary.losses / resolvedSignals) * 100 : 0
-
-  return (
-    <div className={cn('rounded-sm space-y-1 p-2 bg-neutral-900')}>
-      <div className='flex items-end justify-between gap-3'>
-        <div>
-          <p className='font-okx text-xs font-medium uppercase text-neutral-200'>{label}</p>
-        </div>
-        <p className='text-xs font-okx text-neutral-300'>{total} captured</p>
-      </div>
-      <div className='grid grid-cols-4 gap-1 w-full text-xs'>
-        <StatCard
-          title='Signals'
-          value={
-            <div className='flex items-end justify-between w-full'>
-              <span className='font-okx text-base'>{summary.signalsFound}</span>
-              <span className='font-light text-base text-slate-200'>{pendingSignals ? 'S' : 'I'}</span>
-            </div>
-          }
-          color='sky'
-        />
-        <StatCard
-          title='Wins'
-          value={
-            <div className='flex items-end justify-between w-full'>
-              <span className='font-okx text-base'>{summary.wins}</span>
-              <span
-                className={cn('font-poly font-medium text-xl text-rose-400', {
-                  'text-rose-500': winPct <= 89,
-                  'text-orange-400': winPct <= 85,
-                  'text-sky-400': winPct <= 80,
-                  'text-green-400': winPct <= 75,
-                  'text-emerald-400': winPct <= 65
-                })}>
-                {winPct.toFixed(0)}
-                <span className='font-okx font-medium text-xs italic'>%</span>
-              </span>
-            </div>
-          }
-          color='gold'
-        />
-        <StatCard
-          title='Losses'
-          value={
-            <div className='flex items-end justify-between w-full'>
-              <span className='font-okx text-base'>{summary.losses}</span>
-              <span className='font-poly font-medium text-xl text-slate-100'>
-                {lossPct.toFixed(0)}
-                <span className='font-okx font-medium text-xs italic'>%</span>
-              </span>
-            </div>
-          }
-          color='rose'
-        />
-        <StatCard
-          title='Best Streak'
-          value={<span className='font-okx font-medium text-base'>{summary.bestWinStreak}</span>}
-          color='neutral'
-        />
-      </div>
-      <div className='flex flex-wrap gap-1'>
-        {summary.series.slice(0, 39).map((outcome, index) => (
-          <span
-            key={`${outcome}-${index}`}
-            className={cn(
-              'inline-flex h-7 min-w-8 items-center justify-center rounded-xs px-1 text-[12px] font-okx font-semibold',
-              outcome === 'W'
-                ? 'bg-amber-300/30 text-amber-100'
-                : outcome === '0'
-                  ? 'bg-emerald-700 text-white'
-                  : 'bg-zinc-300/20 text-zinc-200'
-            )}>
-            {outcome}
-          </span>
-        ))}
-      </div>
-      <p className='font-okx text-xs font-medium uppercase text-neutral-200 space-x-4 mt-1'>
-        <span>Zero = {summary.zeroLosses} </span>
-        <span>&middot;</span>
-        <span>Swipes = {summary.losses - summary.zeroLosses}</span>
-      </p>
-    </div>
-  )
-}
-
-const LobbyNumber: FC<{
-  number: number
-  highlighted?: boolean
-  leadingSignal?: boolean
-  winning?: boolean
-  losing?: boolean
-}> = ({ number, highlighted = false, leadingSignal = false, winning = false, losing = false }) => {
-  const color =
-    winning && leadingSignal
-      ? 'bg-pink-400 text-neutral-50'
-      : winning
-        ? 'bg-yellow-300 text-neutral-900'
-        : losing
-          ? 'bg-red-500 text-white'
-          : leadingSignal
-            ? 'bg-pink-400 text-neutral-50'
-            : highlighted
-              ? 'bg-sky-600 text-neutral-100'
-              : number === 0
-                ? 'bg-emerald-700 text-white'
-                : RED_NUMBERS.includes(number)
-                  ? 'bg-neutral-100 text-red-600'
-                  : 'bg-neutral-500 text-white'
-  return (
-    <span
-      className={`${color} min-w-7 max-w-9 min-h-5 max-h-5 rounded-none flex items-center justify-center text-[13px] font-semibold`}>
-      {number}
-    </span>
-  )
-}
-
-interface StatCardProps {
-  title: string
-  value: ReactNode
-  subtitle?: string
-  icon?: ReactNode
-  trend?: 'up' | 'down' | 'neutral'
-  color?: 'emerald' | 'neutral' | 'rose' | 'gold' | 'sky'
-  extra?: ReactNode
-}
-
-const STAT_VALUE_CLASS_NAME: Record<NonNullable<StatCardProps['color']>, string> = {
-  emerald: 'bg-linear-to-r from-emerald-400 to-emerald-300 bg-clip-text text-transparent',
-  neutral: 'bg-linear-to-r from-neutral-200 to-neutral-200 bg-clip-text text-transparent',
-  rose: 'text-rose-200',
-  gold: 'bg-linear-to-r from-yellow-300 to-yellow-200 bg-clip-text text-transparent',
-  sky: 'bg-linear-to-r from-sky-500 to-sky-500 bg-clip-text text-transparent'
-}
-
-const StatCard: FC<StatCardProps> = ({ title, value, trend, color = 'emerald', extra }) => (
-  <div className={cn('rounded-xs p-2 pb-0 bg-neutral-800 space-y-1.5')}>
-    <div className='flex items-center justify-between'>
-      <span className='text-[9px] font-ios text-neutral-300 uppercase tracking-widest'>{title}</span>
-      {extra}
-    </div>
-    <div className='flex items-end w-full'>
-      <div className={cn('text-xl font-medium w-full', STAT_VALUE_CLASS_NAME[color])}>{value}</div>
-      {trend && (
-        <span
-          className={` ${trend === 'up' ? 'text-emerald-400' : trend === 'down' ? 'text-rose-400' : 'text-neutral-400'}`}>
-          {trend === 'up' ? (
-            <span className='size-4'>up</span>
-          ) : trend === 'down' ? (
-            <span className='size-4'>down</span>
-          ) : // <TrendingDown size={16} />
-          null}
-        </span>
-      )}
-    </div>
-  </div>
-)
-
-const StatsOverview = ({ stats }: { stats: Stats }) => (
-  <div className='grid grid-cols-4 gap-1'>
-    <StatCard
-      title='EVEN'
-      value={`${stats.oddEven.even.pct.toFixed(1)}%`}
-      subtitle={`${stats.oddEven.even.count}`}
-      color='neutral'
-    />
-    <StatCard
-      title='RED'
-      value={`${stats.colors.red.pct.toFixed(1)}%`}
-      subtitle={`${stats.colors.red.count}`}
-      color='rose'
-    />
-    <StatCard
-      title='BLACK'
-      value={`${stats.colors.black.pct.toFixed(1)}%`}
-      subtitle={`${stats.colors.black.count}`}
-      color='neutral'
-    />
-    <StatCard
-      title='ODD'
-      value={`${stats.oddEven.odd.pct.toFixed(1)}%`}
-      subtitle={`${stats.oddEven.odd.count}`}
-      color='neutral'
-    />
-  </div>
-)
-
-interface HotAndColdNumbersProps {
-  hotNumbers: [number, number][]
-  coldNumbers: [number, number][]
-}
-
-const HotAndColdNumbers = ({ hotNumbers, coldNumbers }: HotAndColdNumbersProps) => (
-  <div className={cn('grid grid-cols-2 gap-1 px-1 py-2 bg-neutral-950 mt-4')}>
-    <div className={cn('')}>
-      <div className='flex flex-wrap gap-1.5'>
-        <div className='p-0.5 h-4'>
-          <span className='font-bold text-orange-300 text-xs uppercase'>H</span>
-        </div>
-        {hotNumbers.length > 0 ? (
-          hotNumbers.map(([num, count]) => <NumberBadge key={num} number={num} count={count} isHot={true} />)
-        ) : (
-          <p className='text-neutral-500 text-sm'>Awaiting data...</p>
-        )}
-      </div>
-    </div>
-
-    <div className={cn('')}>
-      <div className='flex flex-wrap gap-1.5 justify-end'>
-        <div className='p-0.5 h-4'>
-          <span className='font-bold text-cyan-400 text-xs uppercase'>C</span>
-        </div>
-        {coldNumbers.length > 0 ? (
-          coldNumbers.map(([num, count]) => <NumberBadge key={num} number={num} count={count} isHot={false} />)
-        ) : (
-          <p className='text-neutral-500 text-sm'>No data yet</p>
-        )}
-      </div>
-    </div>
-  </div>
-)
-
-interface PercentageBarProps {
-  label: string
-  percentage: number
-  color: string
-  count: number
-}
-
-const VPctBar: FC<PercentageBarProps & { cols?: string }> = ({ label, percentage, color, count, cols }) => (
-  <div className={cn('group', cols)}>
-    <div className={cn('relative h-10 bg-neutral-700 rounded-t-sm overflow-hidden flex items-end')}>
-      <div
-        className={`w-full ${color} rounded-xs rounded-b-none transition-all duration-700 ease-out group-hover:shadow-lg`}
-        style={{ height: `${Math.min(percentage, 100) + 0.66}%` }}
-      />
-
-      <span className='absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 text-sm font-semibold text-neutral-200'>
-        {percentage.toFixed(1)}%
-      </span>
-    </div>
-    <div className='flex items-center justify-center space-x-2 mt-1.5'>
-      <span className='text-xs text-neutral-300'>{label}</span>
-      <span className='text-xs text-neutral-500'>{count}</span>
-    </div>
-  </div>
-)
-
-const VPctOverview = ({ stats }: { stats: Stats }) => (
-  <div className='grid grid-cols-11 gap-1'>
-    <VPctBar
-      label='ZERO'
-      percentage={stats.zero.pct}
-      color='bg-linear-to-b from-emerald-500 to-emerald-600'
-      count={stats.zero.count}
-      cols='col-span-2'
-    />
-    <VPctBar
-      label='1 - 12'
-      percentage={stats.dozens[0].pct}
-      color='bg-linear-to-b from-cyan-300/50 to-cyan-500'
-      count={stats.dozens[0].count}
-      cols='col-span-3'
-    />
-    <VPctBar
-      label='13 - 24'
-      percentage={stats.dozens[1].pct}
-      color='bg-linear-to-b from-sky-300/50 to-sky-500'
-      count={stats.dozens[1].count}
-      cols='col-span-3'
-    />
-    <VPctBar
-      label='25 - 36'
-      percentage={stats.dozens[2].pct}
-      color='bg-linear-to-b from-blue-300/50 to-blue-500'
-      count={stats.dozens[2].count}
-      cols='col-span-3'
-    />
-  </div>
-)
-
-interface NumberBadgeProps {
-  number: number
-  count: number
-  isHot?: boolean
-  showCount?: boolean
-}
-
-const NumberBadge: FC<NumberBadgeProps> = ({ number, count, isHot = true, showCount = true }) => {
-  const getColor = (num: number) => {
-    if (num === 0) return 'bg-linear-to-br from-emerald-500 to-emerald-600'
-    if (RED_NUMBERS.includes(num)) return 'bg-linear-to-br from-[#B51B13] to-rose-600/80'
-    return 'bg-linear-to-br from-neutral-600 to-neutral-700'
-  }
-
-  return (
-    <div className='relative group'>
-      <div
-        className={`w-7 h-5.5 ${getColor(number)} rounded-xs flex items-center justify-center font-semibold text-white hover:scale-110 hover:shadow-lg ${isHot ? 'hover:shadow-rose-500/20' : 'hover:shadow-cyan-500/20'}`}>
-        <span className='font-semibold text-base'>{number}</span>
-      </div>
-      {showCount && (
-        <div
-          className={`absolute -top-1.5 -right-0.5 w-3.5 h-3 rounded-xs flex items-center justify-center text-[8px] font-medium text-white ${isHot ? 'bg-orange-200/20' : 'bg-cyan-100/20'} backdrop-blur-3xl`}>
-          {count}
-        </div>
-      )}
-    </div>
-  )
-}
-
-const PercentageBar: FC<PercentageBarProps> = ({ label, percentage, color, count }) => (
-  <div className='group'>
-    <div className='flex justify-between items-center mb-1.5'>
-      <span className='text-xs text-neutral-300'>{label}</span>
-      <div className='flex items-center gap-2'>
-        <span className='text-xs text-neutral-500'>({count})</span>
-        <span className='text-sm font-semibold text-neutral-200'>{percentage.toFixed(1)}%</span>
-      </div>
-    </div>
-    <div className='h-2 bg-neutral-700/50 rounded-full overflow-hidden'>
-      <div
-        className={`h-full ${color} rounded-full transition-all duration-700 ease-out group-hover:shadow-lg`}
-        style={{ width: `${Math.min(percentage, 100)}%` }}
-      />
-    </div>
-  </div>
-)
-
-interface LobbyHistoriesProps {
-  data: { tableId: string; numbers: number[] }[]
-}
-
-const LobbyHistories = ({ data }: LobbyHistoriesProps) => (
-  <div className={cn('rounded-sm p-3 space-y-1 bg-neutral-900')}>
-    {data.map(({ tableId, numbers }) => (
-      <div key={tableId} className='flex items-center gap-3'>
-        <span className='text-xs uppercase text-neutral-200 min-w-48 shrink-0 truncate' title={tableId}>
-          {
-            tmap[
-              `${tableId
-                .replace(/0+$/, '')
-                .replace(/^[A-Z][a-z]+/, '')
-                .toLowerCase()}` as keyof typeof tmap
-            ]
-          }
-        </span>
-        <div className='flex gap-0.5 bg-white/40 p-0.5 rounded-xs'>
-          {numbers.slice(0, 11).map((n, i) => (
-            <LobbyNumber key={i} number={n} />
-          ))}
-        </div>
-      </div>
-    ))}
-  </div>
-)
