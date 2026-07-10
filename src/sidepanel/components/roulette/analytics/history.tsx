@@ -13,15 +13,15 @@ export const LobbyNumber: FC<{
 }> = ({ number, highlighted = false, leadingSignal = false, winning = false, losing = false }) => {
   const color =
     winning && leadingSignal
-      ? 'bg-pink-400 text-neutral-50'
+      ? 'bg-pink-400 text-white'
       : winning
         ? 'bg-yellow-300 text-neutral-900'
         : losing
           ? 'bg-red-500 text-white'
           : leadingSignal
-            ? 'bg-pink-400 text-neutral-50'
+            ? 'bg-pink-400 text-white'
             : highlighted
-              ? 'bg-sky-600 text-neutral-100'
+              ? 'bg-sky-600 text-white'
               : number === 0
                 ? 'bg-emerald-700 text-white'
                 : RED_NUMBERS.includes(number)

@@ -162,7 +162,8 @@ export function RouletteWorkspace({
       <Analytics
         lobbyHistories={evolutionLobbyHistories}
         evolutionRecentNumbers={evolutionRecentNumbers}
-        evolutionRecentHistory={evolutionReviewCombinedNumbers}
+        evolutionRecentHistory={evolutionRecentHistory}
+        evolutionReviewCombinedNumbers={evolutionReviewCombinedNumbers}
         onReset={handleReset}
         results={stats.results}
         latestSpin={latestSpin}

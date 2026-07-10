@@ -1,25 +1,13 @@
 import type { LobbyTableHistory, RouletteSpinResult } from '@/src/types/roulette'
 import { FC, useEffect, useMemo, useRef } from 'react'
 import { postJsonToEndpoint } from '../../../../lib/relayEndpoints'
-import {
-  BLACK_NUMBERS,
-  getKimQuadrantsContainingPair,
-  type KimQuadrantId,
-  KIMS_ALGO_QUADRANTS,
-  ORPHELINS_G,
-  RED_NUMBERS,
-  resolveKimQuadrantPreference,
-  selectKimQuadrant,
-  TIER_G,
-  VOISINS_G
-} from '../../../../lib/roulette'
+import { BLACK_NUMBERS, ORPHELINS_G, RED_NUMBERS, TIER_G, VOISINS_G } from '../../../../lib/roulette'
 import { cn } from '../../../../lib/utils'
 import { ClassName } from '../../../../types'
 import { Stats } from '../types'
-import { getHotNumbers } from '../utils'
 import { HistoryNumbers, SignalOverview } from './history'
+import { resolveRouletteSignalStates } from './resolve-states'
 import { HotAndColdNumbers, StatsOverview, VPctOverview } from './stats'
-import { SignalOutcome, SignalSummary } from './types'
 
 export const cardClassName: ClassName = `border-zinc-800 bg-[linear-gradient(180deg,rgba(255,255,255,0.01),rgba(255,255,255,0)),linear-gradient(180deg,rgba(31,35,41,0.96),rgba(12,14,19,0.9))]`
 
@@ -28,6 +16,7 @@ type AnalyticsProps = {
   lobbyHistories?: LobbyTableHistory[]
   evolutionRecentNumbers?: number[]
   evolutionRecentHistory?: number[]
+  evolutionReviewCombinedNumbers?: number[]
   onReset?: () => void
   results: RouletteSpinResult[]
   latestSpin: RouletteSpinResult | null
@@ -47,10 +36,6 @@ type AnalyticsOutcomeState = {
   index: number
   displayIndex: number
   number: number | null
-}
-
-function isRepeatSignalPair(first: number, second: number) {
-  return first !== 0 && first === second
 }
 
 function resolveRouletteAnalyticsEndpointUrl(rouletteResultEndpointUrl?: string) {
@@ -103,150 +88,12 @@ function mapOutcomeStates(
   }))
 }
 
-function mapAllNumbersFromStart(allNumbersFromStart: readonly number[]): SignalSummary {
-  let signalsFound = 0
-  let wins = 0
-  let losses = 0
-  let zeroLosses = 0
-  let currentWinStreak = 0
-  let bestWinStreak = 0
-  const winStreaks: number[] = []
-  const signalIndexes: number[] = []
-  const leadingSignalIndexes: number[] = []
-  const winningIndexes: number[] = []
-  const losingIndexes: number[] = []
-  const series: SignalOutcome[] = []
-  let currentQuadrant: KimQuadrantId = 'q1'
-
-  let index = 1
-  while (index < allNumbersFromStart.length) {
-    const first = allNumbersFromStart[index - 1]
-    const second = allNumbersFromStart[index]
-    const candidateQuadrants = getKimQuadrantsContainingPair(first, second)
-    const isRepeatSignal = isRepeatSignalPair(first, second)
-
-    if (candidateQuadrants.length === 0 && !isRepeatSignal) {
-      index += 1
-      continue
-    }
-
-    signalsFound += 1
-    signalIndexes.push(index - 1, index)
-    leadingSignalIndexes.push(index)
-    const selectedQuadrant = resolveKimQuadrantPreference(
-      candidateQuadrants,
-      getHotNumbers(allNumbersFromStart.slice(0, index + 1)),
-      currentQuadrant
-    )
-    if (selectedQuadrant) {
-      currentQuadrant = selectedQuadrant
-    }
-
-    const activeQuadrants: KimQuadrantId[] = selectedQuadrant ? [selectedQuadrant] : []
-    let resolvedAt: number | null = null
-    let restartAtLeadingSignal = false
-
-    for (let round = 1; round <= 5; round++) {
-      const spinIndex = index + round
-      if (spinIndex >= allNumbersFromStart.length) {
-        index = allNumbersFromStart.length
-        break
-      }
-
-      const landedNumber = allNumbersFromStart[spinIndex]
-      const isZero = landedNumber === 0
-      const isZeroLoss = isZero && round <= 3
-      const isZeroWin = isZero && round >= 4
-      const previousSpinNumber = allNumbersFromStart[spinIndex - 1] ?? null
-      const isRepeatWin =
-        round > 1 && landedNumber !== 0 && previousSpinNumber !== null && landedNumber === previousSpinNumber
-      const isQuadrantWin = activeQuadrants.some((quadrant) => KIMS_ALGO_QUADRANTS[quadrant].includes(landedNumber))
-      const isSignalWin =
-        previousSpinNumber !== null &&
-        (getKimQuadrantsContainingPair(previousSpinNumber, landedNumber).length > 0 ||
-          isRepeatSignalPair(previousSpinNumber, landedNumber))
-      const isWin = isQuadrantWin || isZeroWin || isRepeatWin || isSignalWin
-
-      if (isZeroLoss) {
-        zeroLosses += 1
-        losses += 1
-        losingIndexes.push(spinIndex)
-        series.push('0')
-        if (currentWinStreak > 0) {
-          winStreaks.push(currentWinStreak)
-        }
-        currentWinStreak = 0
-        resolvedAt = spinIndex
-        break
-      }
-
-      if (isWin) {
-        wins += 1
-        if (isSignalWin) {
-          restartAtLeadingSignal = true
-        }
-        currentWinStreak += 1
-        bestWinStreak = Math.max(bestWinStreak, currentWinStreak)
-        winningIndexes.push(spinIndex)
-        series.push('W')
-        resolvedAt = spinIndex
-        break
-      }
-
-      if (round === 5) {
-        losses += 1
-        losingIndexes.push(spinIndex)
-        series.push('L')
-        if (currentWinStreak > 0) {
-          winStreaks.push(currentWinStreak)
-        }
-        currentWinStreak = 0
-        resolvedAt = spinIndex
-      }
-
-      const nextSelection = selectKimQuadrant(landedNumber, {
-        currentQuadrant,
-        usedQuadrants: activeQuadrants,
-        hotNumbers: getHotNumbers(allNumbersFromStart.slice(0, spinIndex + 1))
-      })
-      if (nextSelection.selectedQuadrant) {
-        currentQuadrant = nextSelection.selectedQuadrant
-        activeQuadrants.push(nextSelection.selectedQuadrant)
-      }
-    }
-
-    if (resolvedAt === null) {
-      break
-    }
-
-    index = restartAtLeadingSignal ? resolvedAt : resolvedAt + 1
-  }
-
-  if (currentWinStreak > 0) {
-    winStreaks.push(currentWinStreak)
-  }
-
-  return {
-    signalsFound,
-    wins,
-    losses,
-    zeroLosses,
-    bestWinStreak,
-    currentWinStreak,
-    winStreaks,
-    signalIndexes,
-    leadingSignalIndexes,
-    winningIndexes,
-    losingIndexes,
-    series: series.reverse()
-  }
-}
-
 export const Analytics: FC<AnalyticsProps> = ({
   results,
   lobbyHistories = [],
   evolutionRecentNumbers = [],
   evolutionRecentHistory = [],
+  evolutionReviewCombinedNumbers = [],
   onReset,
   latestSpin,
   rouletteResultEndpointUrl
@@ -257,31 +104,28 @@ export const Analytics: FC<AnalyticsProps> = ({
     .reverse()
   const recentNumbers = evolutionRecentNumbers.slice(0, 501)
   const historyNumbers = evolutionRecentHistory.slice(0, 501)
-  // Both sources are newest-first. The connector entries are included in
-  // mostRecentNumbers, so they must stay visible when that card is folded
-  // into the history display below.
-  const mostRecentNumbers = recentNumbers.concat(historyNumbers).slice(0, 13)
-  const historyConnectorCount = Math.max(0, mostRecentNumbers.length - recentNumbers.length)
-  const displayedHistoryNumbers = historyNumbers.slice(historyConnectorCount)
-  const allNumbersFromStart = recentNumbers.concat(historyNumbers).reverse()
-  const allStatsFromStart = evolutionRecentHistory
-  const signalSummary = useMemo(() => mapAllNumbersFromStart(evolutionRecentHistory), [evolutionRecentHistory])
+  // All history sources are newest-first. Prefer the review capture when it
+  // exists because it is already the single combined recent+statistics tape.
+  const allNumbersNewestFirst =
+    evolutionReviewCombinedNumbers.length > 0 ? evolutionReviewCombinedNumbers : recentNumbers.concat(historyNumbers)
+  const numbersSignature = allNumbersNewestFirst.join(',')
+  const allNumbersFromStart = useMemo(() => [...allNumbersNewestFirst].reverse(), [numbersSignature])
+  const mostRecentNumbers = allNumbersNewestFirst.slice(0, 13)
+  const displayedHistoryNumbers = allNumbersNewestFirst.slice(mostRecentNumbers.length)
+  const displayCount = allNumbersNewestFirst.length
+  const signalSummary = useMemo(() => resolveRouletteSignalStates(allNumbersFromStart), [numbersSignature])
   const highlightedSignalIndexes = useMemo(() => {
-    const displayCount = recentNumbers.length + historyNumbers.length
     return new Set(signalSummary.signalIndexes.map((index) => displayCount - 1 - index))
-  }, [historyNumbers.length, recentNumbers.length, signalSummary.signalIndexes])
+  }, [displayCount, signalSummary.signalIndexes])
   const highlightedLeadingSignalIndexes = useMemo(() => {
-    const displayCount = recentNumbers.length + historyNumbers.length
     return new Set(signalSummary.leadingSignalIndexes.map((index) => displayCount - 1 - index))
-  }, [historyNumbers.length, recentNumbers.length, signalSummary.leadingSignalIndexes])
+  }, [displayCount, signalSummary.leadingSignalIndexes])
   const highlightedWinningIndexes = useMemo(() => {
-    const displayCount = recentNumbers.length + historyNumbers.length
     return new Set(signalSummary.winningIndexes.map((index) => displayCount - 1 - index))
-  }, [historyNumbers.length, recentNumbers.length, signalSummary.winningIndexes])
+  }, [displayCount, signalSummary.winningIndexes])
   const highlightedLosingIndexes = useMemo(() => {
-    const displayCount = recentNumbers.length + historyNumbers.length
     return new Set(signalSummary.losingIndexes.map((index) => displayCount - 1 - index))
-  }, [historyNumbers.length, recentNumbers.length, signalSummary.losingIndexes])
+  }, [displayCount, signalSummary.losingIndexes])
   const signalOverviewValues = useMemo(() => {
     const resolvedSignals = signalSummary.wins + signalSummary.losses
     const pendingSignals = Math.max(0, signalSummary.signalsFound - resolvedSignals)
@@ -306,8 +150,7 @@ export const Analytics: FC<AnalyticsProps> = ({
     [rouletteResultEndpointUrl]
   )
   const analyticsRelayPayload = useMemo(() => {
-    const displayCount = recentNumbers.length + historyNumbers.length
-    const historyIndexOffset = recentNumbers.length + historyConnectorCount
+    const historyIndexOffset = mostRecentNumbers.length
 
     return {
       type: 'roulette.analytics',
@@ -362,11 +205,9 @@ export const Analytics: FC<AnalyticsProps> = ({
     highlightedLosingIndexes,
     highlightedSignalIndexes,
     highlightedWinningIndexes,
-    historyConnectorCount,
-    historyNumbers.length,
     latestSpin,
     mostRecentNumbers,
-    recentNumbers.length,
+    numbersSignature,
     signalOverviewValues,
     signalSummary.leadingSignalIndexes,
     signalSummary.losingIndexes,
@@ -518,21 +359,20 @@ export const Analytics: FC<AnalyticsProps> = ({
 
   return (
     <div className='space-y-2 text-white p-1 mt-2'>
-      <div className='mx-auto space-y-0'>
+      <div className='mx-auto space-y-4'>
         {/* Table History */}
-        {evolutionRecentHistory.length > 0 && (
+        {allNumbersNewestFirst.length > 0 && (
           <HistoryNumbers
-            recents={mostRecentNumbers}
+            recents={[]}
             highlightedIndexes={highlightedSignalIndexes}
             leadingSignalIndexes={highlightedLeadingSignalIndexes}
             winningIndexes={highlightedWinningIndexes}
             losingIndexes={highlightedLosingIndexes}
-            indexOffset={recentNumbers.length + historyConnectorCount}
-            numbers={evolutionRecentHistory}
+            numbers={allNumbersNewestFirst}
           />
         )}
-        {evolutionRecentHistory.length > 0 && (
-          <SignalOverview total={mostRecentNumbers.length + evolutionRecentHistory.length} summary={signalSummary} />
+        {allNumbersNewestFirst.length > 0 && (
+          <SignalOverview total={allNumbersNewestFirst.length} summary={signalSummary} />
         )}
 
         {/* Spacer */}
@@ -540,37 +380,34 @@ export const Analytics: FC<AnalyticsProps> = ({
 
         {/* Hot & Cold Numbers */}
         <HotAndColdNumbers hotNumbers={stats.hotNumbers} coldNumbers={stats.coldNumbers} />
-        {/* Recent Numbers Strip */}
-        <VPctOverview stats={stats} />
 
-        {/* Stats Overview */}
-        <StatsOverview stats={stats} />
+        <div className='space-y-8 bg-[linear-gradient(180deg,rgba(255,255,255,0.01),rgba(255,255,255,0)),linear-gradient(180deg,rgba(31,35,41,0.96),rgba(12,14,19,0.9))]'>
+          {/* Recent Numbers Strip */}
+          <VPctOverview stats={stats} />
+
+          {/* Stats Overview */}
+          <StatsOverview stats={stats} />
+        </div>
 
         {/* RESET */}
-        <div className={cn('rounded-lg border border-white/8 p-4', cardClassName)}>
+        <div className={cn('rounded-lg border border-white/8 p-4 bg-neutral-950')}>
           <div className='flex items-end justify-between gap-4'>
             <div className='space-y-1'>
-              <p className='text-[8px] font-display uppercase tracking-wide text-neutral-500'>roulette</p>
-              <h1 className='font-okx text-base font-semibold uppercase text-white'>Analytics</h1>
+              <p className='text-[9px] font-sans uppercase tracking-wide text-neutral-500'>re-up.ph</p>
+              <h1 className='font-display font-semibold text-white text-base uppercase'>Analytics</h1>
             </div>
             <button
               type='button'
               onClick={onReset}
               disabled={winningNumbers.length === 0}
               className='rounded-full border border-white/12 bg-white/5 px-3 py-1.5 transition hover:border-white/25 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40'>
-              <span className='text-xs font-okx font-medium uppercase tracking-[0.24em] text-neutral-200'>Reset</span>
+              <span className='text-xs font-sans font-medium tracking-wide text-neutral-200'>Reset</span>
             </button>
           </div>
-          {winningNumbers.length > 0 && (
-            <div className='mt-4 flex items-center justify-between gap-3 border-t border-white/8 pt-3 text-xs text-neutral-400'>
-              <span className='font-okx'>{winningNumbers.length} tracked spins</span>
-              <span className='font-okx'>Latest result: {winningNumbers[0]}</span>
-            </div>
-          )}
         </div>
         {/* Footer */}
         <div className='text-center py-4'>
-          <p className='text-neutral-500 text-xs'>re-up.ph • v3.69</p>
+          <p className='text-neutral-500 text-xs'>re-up.ph • v3.6.9</p>
         </div>
       </div>
     </div>
