@@ -6,6 +6,8 @@
     "build": "node build.mjs",
     "dev": "node build.mjs --dev",
     "clean": "rm -rf dist",
+    "roulette:analytics": "bun run ./src/sidepanel/components/roulette/analytics/resolve-states.scenario.ts",
+    "roulette:recent": "bun run ./src/lib/roulette/evolution-recent-numbers.scenario.ts",
     "roulette:kims": "bun run ./src/lib/roulette/kims-algo.demo.ts",
     "roulette:kims:csv": "bun --silent ./src/lib/roulette/kims-algo.csv.ts",
     "postinstall": "node ./patch-tailwind-register-hooks.mjs"

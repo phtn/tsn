@@ -1,39 +1,43 @@
 import { RED_NUMBERS } from '@/src/lib/roulette'
 import { cn } from '@/src/lib/utils'
-import { FC, useEffect, useState } from 'react'
+import { FC, memo, useEffect, useState } from 'react'
 import { StatCard } from './components'
-import { SignalOverviewProps } from './types'
+import type { RouletteHistoryItem, SignalOverviewProps } from './types'
 
-export const LobbyNumber: FC<{
-  number: number
-  highlighted?: boolean
-  leadingSignal?: boolean
-  winning?: boolean
-  losing?: boolean
-}> = ({ number, highlighted = false, leadingSignal = false, winning = false, losing = false }) => {
+export const HistoryCell = memo(function HistoryCell({ item }: { item: RouletteHistoryItem }) {
+  const { number, highlighted, leadingSignal, winning, losing } = item
   const color =
-    winning && leadingSignal
-      ? 'bg-pink-400 text-white'
-      : winning
-        ? 'bg-yellow-300 text-neutral-900'
-        : losing
-          ? 'bg-red-500 text-white'
-          : leadingSignal
-            ? 'bg-pink-400 text-white'
-            : highlighted
-              ? 'bg-sky-600 text-white'
-              : number === 0
-                ? 'bg-emerald-700 text-white'
-                : RED_NUMBERS.includes(number)
-                  ? 'bg-neutral-100 text-red-600'
-                  : 'bg-slate-500 text-white'
+    winning
+      ? 'bg-yellow-300 text-neutral-900'
+      : losing
+        ? 'bg-red-500 text-white'
+        : leadingSignal
+          ? 'bg-pink-400 text-white'
+          : highlighted
+            ? 'bg-sky-600 text-white'
+            : number === 0
+              ? 'bg-emerald-700 text-white'
+              : RED_NUMBERS.includes(number)
+                ? 'bg-neutral-100 text-red-600'
+                : 'bg-slate-500 text-white'
   return (
     <span
       className={`${color} w-9.5 min-h-6 max-h-6 rounded-none flex items-center justify-center font-display font-semibold text-[13px]`}>
       {number}
     </span>
   )
-}
+})
+
+/** Compatibility wrapper for the archived analytics components in not-used.tsx. */
+export const LobbyNumber: FC<{
+  number: number
+  highlighted?: boolean
+  leadingSignal?: boolean
+  winning?: boolean
+  losing?: boolean
+}> = ({ number, highlighted = false, leadingSignal = false, winning = false, losing = false }) => (
+  <HistoryCell item={{ index: 0, number, highlighted, leadingSignal, winning, losing }} />
+)
 
 function formatElapsedTime(seconds: number): string {
   if (seconds < 60) {
@@ -49,29 +53,14 @@ function formatElapsedTime(seconds: number): string {
   return `${hours} hour${hours === 1 ? '' : 's'} ago`
 }
 
-export const HistoryNumbers: FC<{
-  recents: number[]
-  numbers: number[]
-  highlightedIndexes: ReadonlySet<number>
-  leadingSignalIndexes: ReadonlySet<number>
-  winningIndexes: ReadonlySet<number>
-  losingIndexes: ReadonlySet<number>
-  indexOffset?: number
-}> = ({
-  recents,
-  numbers,
-  highlightedIndexes,
-  leadingSignalIndexes,
-  winningIndexes,
-  losingIndexes,
-  indexOffset = 0
-}) => {
-  const numbersSignature = `${recents.join(',')}::${numbers.join(',')}`
+const HistoryAge: FC<{ numbersSignature: string }> = ({ numbersSignature }) => {
   const [lastUpdatedAt, setLastUpdatedAt] = useState(() => Date.now())
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
-    setLastUpdatedAt(Date.now())
+    const updatedAt = Date.now()
+    setLastUpdatedAt(updatedAt)
+    setNow(updatedAt)
   }, [numbersSignature])
 
   useEffect(() => {
@@ -82,39 +71,39 @@ export const HistoryNumbers: FC<{
   const elapsedSeconds = Math.max(0, Math.floor((now - lastUpdatedAt) / 1000))
 
   return (
+    <p id='last-update' className='font-sans text-xs text-neutral-300 lowercase italic'>
+      {formatElapsedTime(elapsedSeconds)}
+    </p>
+  )
+}
+
+export const HistoryTape = memo(function HistoryTape({ items }: {
+  items: readonly RouletteHistoryItem[]
+}) {
+  const numbersSignature = items.map((item) => item.number).join(',')
+
+  return (
     <div className={cn('rounded-sm p-2 space-y-3 bg-neutral-950')}>
       <div className='flex items-center justify-between h-8'>
         <div>
           <p className='flex items-center space-x-2 font-sans font-medium text-neutral-100 text-xs uppercase'>
             <span className='font-sans'>Hist</span>
             <span>&middot;</span>
-            <span className='opacity-70 font-sans font-light'>{recents.length + numbers.length}</span>
+            <span className='opacity-70 font-sans font-light'>{items.length}</span>
           </p>
         </div>
         <div className='px-3'>
-          <p id='last-update' className='font-sans text-xs text-neutral-300 lowercase italic'>
-            {formatElapsedTime(elapsedSeconds)}
-          </p>
+          <HistoryAge numbersSignature={numbersSignature} />
         </div>
       </div>
       <div className='flex h-37 flex-wrap gap-[1.5px] overflow-y-auto bg-slate-700'>
-        {numbers.map((number, index) => {
-          const displayIndex = index + indexOffset
-          return (
-            <LobbyNumber
-              key={`history-${number}-${index}`}
-              highlighted={highlightedIndexes.has(displayIndex)}
-              leadingSignal={leadingSignalIndexes.has(displayIndex)}
-              winning={winningIndexes.has(displayIndex)}
-              losing={losingIndexes.has(displayIndex)}
-              number={number}
-            />
-          )
-        })}
+        {items.map((item) => (
+          <HistoryCell key={`history-${item.index}-${item.number}`} item={item} />
+        ))}
       </div>
     </div>
   )
-}
+})
 export const SignalOverview = ({ total, summary }: SignalOverviewProps) => {
   const resolvedSignals = summary.wins + summary.losses
   const pendingSignals = Math.max(0, summary.signalsFound - resolvedSignals)

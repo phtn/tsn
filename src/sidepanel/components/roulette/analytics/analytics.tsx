@@ -5,8 +5,8 @@ import { BLACK_NUMBERS, ORPHELINS_G, RED_NUMBERS, TIER_G, VOISINS_G } from '../.
 import { cn } from '../../../../lib/utils'
 import { ClassName } from '../../../../types'
 import { Stats } from '../types'
-import { HistoryNumbers, SignalOverview } from './history'
-import { resolveRouletteSignalStates } from './resolve-states'
+import { HistoryTape, SignalOverview } from './history'
+import { resolveRouletteHistory } from './resolve-states'
 import { HotAndColdNumbers, StatsOverview, VPctOverview } from './stats'
 
 export const cardClassName: ClassName = `border-zinc-800 bg-[linear-gradient(180deg,rgba(255,255,255,0.01),rgba(255,255,255,0)),linear-gradient(180deg,rgba(31,35,41,0.96),rgba(12,14,19,0.9))]`
@@ -17,19 +17,12 @@ type AnalyticsProps = {
   evolutionRecentNumbers?: number[]
   evolutionRecentHistory?: number[]
   evolutionReviewCombinedNumbers?: number[]
+  evolutionTableId?: string | null
+  evolutionTableName?: string | null
   onReset?: () => void
   results: RouletteSpinResult[]
   latestSpin: RouletteSpinResult | null
   rouletteResultEndpointUrl?: string
-}
-
-type NumberState = {
-  index: number
-  number: number
-  highlighted: boolean
-  leadingSignal: boolean
-  winning: boolean
-  losing: boolean
 }
 
 type AnalyticsOutcomeState = {
@@ -55,27 +48,6 @@ function resolveRouletteAnalyticsEndpointUrl(rouletteResultEndpointUrl?: string)
   }
 }
 
-function mapNumberStates(
-  numbers: readonly number[],
-  indexOffset: number,
-  highlightedIndexes: ReadonlySet<number>,
-  leadingSignalIndexes: ReadonlySet<number>,
-  winningIndexes: ReadonlySet<number>,
-  losingIndexes: ReadonlySet<number>
-): NumberState[] {
-  return numbers.map((number, index) => {
-    const displayIndex = index + indexOffset
-    return {
-      index: displayIndex,
-      number,
-      highlighted: highlightedIndexes.has(displayIndex),
-      leadingSignal: leadingSignalIndexes.has(displayIndex),
-      winning: winningIndexes.has(displayIndex),
-      losing: losingIndexes.has(displayIndex)
-    }
-  })
-}
-
 function mapOutcomeStates(
   indexes: readonly number[],
   allNumbersFromStart: readonly number[],
@@ -94,14 +66,13 @@ export const Analytics: FC<AnalyticsProps> = ({
   evolutionRecentNumbers = [],
   evolutionRecentHistory = [],
   evolutionReviewCombinedNumbers = [],
+  evolutionTableId = null,
+  evolutionTableName = null,
   onReset,
   latestSpin,
   rouletteResultEndpointUrl
 }) => {
-  const winningNumbers = results
-    .map((result) => result.winningNumber)
-    .flat()
-    .reverse()
+  const winningNumbers = useMemo(() => results.map((result) => result.winningNumber).reverse(), [results])
   const recentNumbers = evolutionRecentNumbers.slice(0, 501)
   const historyNumbers = evolutionRecentHistory.slice(0, 501)
   // All history sources are newest-first. Prefer the review capture when it
@@ -109,23 +80,20 @@ export const Analytics: FC<AnalyticsProps> = ({
   const allNumbersNewestFirst =
     evolutionReviewCombinedNumbers.length > 0 ? evolutionReviewCombinedNumbers : recentNumbers.concat(historyNumbers)
   const numbersSignature = allNumbersNewestFirst.join(',')
-  const allNumbersFromStart = useMemo(() => [...allNumbersNewestFirst].reverse(), [numbersSignature])
-  const mostRecentNumbers = allNumbersNewestFirst.slice(0, 13)
-  const displayedHistoryNumbers = allNumbersNewestFirst.slice(mostRecentNumbers.length)
-  const displayCount = allNumbersNewestFirst.length
-  const signalSummary = useMemo(() => resolveRouletteSignalStates(allNumbersFromStart), [numbersSignature])
-  const highlightedSignalIndexes = useMemo(() => {
-    return new Set(signalSummary.signalIndexes.map((index) => displayCount - 1 - index))
-  }, [displayCount, signalSummary.signalIndexes])
-  const highlightedLeadingSignalIndexes = useMemo(() => {
-    return new Set(signalSummary.leadingSignalIndexes.map((index) => displayCount - 1 - index))
-  }, [displayCount, signalSummary.leadingSignalIndexes])
-  const highlightedWinningIndexes = useMemo(() => {
-    return new Set(signalSummary.winningIndexes.map((index) => displayCount - 1 - index))
-  }, [displayCount, signalSummary.winningIndexes])
-  const highlightedLosingIndexes = useMemo(() => {
-    return new Set(signalSummary.losingIndexes.map((index) => displayCount - 1 - index))
-  }, [displayCount, signalSummary.losingIndexes])
+  const resolvedHistory = useMemo(() => resolveRouletteHistory(allNumbersNewestFirst), [numbersSignature])
+  const { allNumbersFromStart, items: historyItems, summary: signalSummary } = resolvedHistory
+  const { displayedHistoryItems, displayedHistoryNumbers, mostRecentItems, mostRecentNumbers } = useMemo(() => {
+    const recentItems = historyItems.slice(0, 13)
+    const olderItems = historyItems.slice(recentItems.length)
+
+    return {
+      mostRecentItems: recentItems,
+      mostRecentNumbers: recentItems.map((item) => item.number),
+      displayedHistoryItems: olderItems,
+      displayedHistoryNumbers: olderItems.map((item) => item.number)
+    }
+  }, [historyItems])
+  const displayCount = historyItems.length
   const signalOverviewValues = useMemo(() => {
     const resolvedSignals = signalSummary.wins + signalSummary.losses
     const pendingSignals = Math.max(0, signalSummary.signalsFound - resolvedSignals)
@@ -156,6 +124,9 @@ export const Analytics: FC<AnalyticsProps> = ({
       type: 'roulette.analytics',
       schemaVersion: 1,
       emittedAt: new Date().toISOString(),
+      tableId: evolutionTableId,
+      tableName: evolutionTableName,
+      tableKnown: evolutionTableId !== null,
       latestSpin: latestSpin
         ? {
             id: latestSpin.id,
@@ -166,26 +137,12 @@ export const Analytics: FC<AnalyticsProps> = ({
         : null,
       mostRecent: {
         numbers: [...mostRecentNumbers],
-        items: mapNumberStates(
-          mostRecentNumbers,
-          0,
-          highlightedSignalIndexes,
-          highlightedLeadingSignalIndexes,
-          highlightedWinningIndexes,
-          highlightedLosingIndexes
-        )
+        items: mostRecentItems
       },
       historyNumbers: {
         numbers: [...displayedHistoryNumbers],
         indexOffset: historyIndexOffset,
-        items: mapNumberStates(
-          displayedHistoryNumbers,
-          historyIndexOffset,
-          highlightedSignalIndexes,
-          highlightedLeadingSignalIndexes,
-          highlightedWinningIndexes,
-          highlightedLosingIndexes
-        )
+        items: displayedHistoryItems
       },
       signalOverview: signalOverviewValues,
       analytics: {
@@ -201,13 +158,13 @@ export const Analytics: FC<AnalyticsProps> = ({
   }, [
     allNumbersFromStart,
     displayedHistoryNumbers,
-    highlightedLeadingSignalIndexes,
-    highlightedLosingIndexes,
-    highlightedSignalIndexes,
-    highlightedWinningIndexes,
+    displayedHistoryItems,
     latestSpin,
+    mostRecentItems,
     mostRecentNumbers,
     numbersSignature,
+    evolutionTableId,
+    evolutionTableName,
     signalOverviewValues,
     signalSummary.leadingSignalIndexes,
     signalSummary.losingIndexes,
@@ -217,6 +174,8 @@ export const Analytics: FC<AnalyticsProps> = ({
   const analyticsRelaySignature = useMemo(
     () =>
       JSON.stringify({
+        tableId: evolutionTableId,
+        tableName: evolutionTableName,
         mostRecentNumbers,
         displayedHistoryNumbers,
         signalOverviewValues,
@@ -225,6 +184,8 @@ export const Analytics: FC<AnalyticsProps> = ({
       }),
     [
       displayedHistoryNumbers,
+      evolutionTableId,
+      evolutionTableName,
       mostRecentNumbers,
       signalOverviewValues,
       signalSummary.losingIndexes,
@@ -234,7 +195,7 @@ export const Analytics: FC<AnalyticsProps> = ({
   const lastAnalyticsRelaySignatureRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!analyticsEndpointUrl || allNumbersFromStart.length === 0) {
+    if (!analyticsEndpointUrl || evolutionTableId === null || allNumbersFromStart.length === 0) {
       return
     }
 
@@ -244,7 +205,13 @@ export const Analytics: FC<AnalyticsProps> = ({
 
     lastAnalyticsRelaySignatureRef.current = analyticsRelaySignature
     void postJsonToEndpoint(analyticsRelayPayload, analyticsEndpointUrl, 'roulette analytics')
-  }, [allNumbersFromStart.length, analyticsEndpointUrl, analyticsRelayPayload, analyticsRelaySignature])
+  }, [
+    allNumbersFromStart.length,
+    analyticsEndpointUrl,
+    analyticsRelayPayload,
+    analyticsRelaySignature,
+    evolutionTableId
+  ])
   const stats = useMemo(() => {
     const total = winningNumbers.length
     if (total === 0) {
@@ -362,14 +329,7 @@ export const Analytics: FC<AnalyticsProps> = ({
       <div className='mx-auto space-y-4'>
         {/* Table History */}
         {allNumbersNewestFirst.length > 0 && (
-          <HistoryNumbers
-            recents={[]}
-            highlightedIndexes={highlightedSignalIndexes}
-            leadingSignalIndexes={highlightedLeadingSignalIndexes}
-            winningIndexes={highlightedWinningIndexes}
-            losingIndexes={highlightedLosingIndexes}
-            numbers={allNumbersNewestFirst}
-          />
+          <HistoryTape items={historyItems} />
         )}
         {allNumbersNewestFirst.length > 0 && (
           <SignalOverview total={allNumbersNewestFirst.length} summary={signalSummary} />

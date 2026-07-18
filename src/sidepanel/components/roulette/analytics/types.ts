@@ -19,6 +19,27 @@ export interface SignalSummary {
   series: SignalOutcome[]
 }
 
+/**
+ * State for one entry in the newest-first history tape sent to /api/bets/r3.
+ * `index` is the display index: 0 is always the newest captured number.
+ */
+export interface RouletteHistoryItem {
+  index: number
+  number: number
+  highlighted: boolean
+  leadingSignal: boolean
+  winning: boolean
+  losing: boolean
+}
+
+export interface ResolvedRouletteHistory {
+  /** Chronological, oldest-first numbers used by analytics indexes. */
+  allNumbersFromStart: number[]
+  /** Newest-first items used by the sidepanel and relay history tapes. */
+  items: RouletteHistoryItem[]
+  summary: SignalSummary
+}
+
 export interface SignalOverviewProps {
   total: number
   summary: SignalSummary

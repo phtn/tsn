@@ -19,6 +19,7 @@ interface RouletteWorkspaceProps {
   evolutionReviewStatisticsNumbers: number[]
   evolutionReviewCombinedNumbers: number[]
   lastEvoluReviewNumbersSignature: string
+  evolutionTableId: string | null
   evolutionTableState: TableState | null
   evolutionTableName: string | null
   evolutionLobbyHistories: LobbyTableHistory[]
@@ -43,6 +44,7 @@ export function RouletteWorkspace({
   evolutionReviewStatisticsNumbers,
   evolutionReviewCombinedNumbers,
   lastEvoluReviewNumbersSignature,
+  evolutionTableId,
   evolutionTableState,
   evolutionTableName,
   evolutionLobbyHistories,
@@ -138,7 +140,7 @@ export function RouletteWorkspace({
   }, [evolutionRecentNumbers, evolutionTableName])
 
   const storedRecentSpins = useMemo(
-    () => stats.results.reverse().map((result) => result.winningNumber),
+    () => stats.results.map((result) => result.winningNumber).reverse(),
     [stats.results]
   )
   const storedLatestSpin = stats.results[stats.results.length - 1] ?? null
@@ -164,6 +166,8 @@ export function RouletteWorkspace({
         evolutionRecentNumbers={evolutionRecentNumbers}
         evolutionRecentHistory={evolutionRecentHistory}
         evolutionReviewCombinedNumbers={evolutionReviewCombinedNumbers}
+        evolutionTableId={evolutionTableId}
+        evolutionTableName={evolutionTableName}
         onReset={handleReset}
         results={stats.results}
         latestSpin={latestSpin}

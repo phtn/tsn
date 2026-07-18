@@ -30,8 +30,18 @@ export function normalizeEvolutionLobbyHistories(value: unknown): EvolutionLobby
 export function getEvolutionRecentNumbersForTable(
   scrapedRecentNumbers: readonly number[],
   lobbyHistories: readonly EvolutionLobbyHistory[],
-  tableName: string | null
+  tableName: string | null,
+  tableId?: string | null
 ): number[] {
+  // The in-table DOM sequence is the live feed consumed by the virtual board.
+  // Lobby history is only a startup fallback because it may update less often.
+  if (scrapedRecentNumbers.length > 0) return [...scrapedRecentNumbers]
+
+  if (tableId) {
+    const tableHistory = lobbyHistories.find((history) => history.tableId === tableId)
+    if (tableHistory) return [...tableHistory.numbers]
+  }
+
   const normalizedTableName = tableName?.trim().toLowerCase()
   if (!normalizedTableName) return [...scrapedRecentNumbers]
 
@@ -40,6 +50,6 @@ export function getEvolutionRecentNumbersForTable(
     return displayName?.toLowerCase() === normalizedTableName
   })
 
-  // Both Evolution sources are newest-first: DOM recent-number chips and lobby.histories results.
+  // Both Evolution sources are newest-first.
   return tableHistory ? [...tableHistory.numbers] : [...scrapedRecentNumbers]
 }

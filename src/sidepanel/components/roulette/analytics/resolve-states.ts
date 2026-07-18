@@ -6,7 +6,7 @@ import {
   selectKimQuadrant
 } from '../../../../lib/roulette'
 import { getHotNumbers } from '../utils'
-import type { SignalOutcome, SignalSummary } from './types'
+import type { ResolvedRouletteHistory, RouletteHistoryItem, SignalOutcome, SignalSummary } from './types'
 
 function isRepeatSignalPair(first: number, second: number): boolean {
   return first !== 0 && first === second
@@ -161,5 +161,39 @@ export function resolveRouletteSignalStates(allNumbersFromStart: readonly number
     winningIndexes: sortedIndexes(winningIndexes),
     losingIndexes: sortedIndexes(losingIndexes),
     series: series.reverse()
+  }
+}
+
+/**
+ * Builds the shared history contract used by both the sidepanel and
+ * /api/bets/r3. Input and item output are newest-first; analytics indexes in
+ * the summary remain chronological (oldest-first).
+ */
+export function resolveRouletteHistory(numbersNewestFirst: readonly number[]): ResolvedRouletteHistory {
+  const allNumbersFromStart = [...numbersNewestFirst].reverse()
+  const summary = resolveRouletteSignalStates(allNumbersFromStart)
+  const signalIndexes = new Set(summary.signalIndexes)
+  const leadingSignalIndexes = new Set(summary.leadingSignalIndexes)
+  const winningIndexes = new Set(summary.winningIndexes)
+  const losingIndexes = new Set(summary.losingIndexes)
+  const displayCount = numbersNewestFirst.length
+
+  const items: RouletteHistoryItem[] = numbersNewestFirst.map((number, displayIndex) => {
+    const chronologicalIndex = displayCount - 1 - displayIndex
+
+    return {
+      index: displayIndex,
+      number,
+      highlighted: signalIndexes.has(chronologicalIndex),
+      leadingSignal: leadingSignalIndexes.has(chronologicalIndex),
+      winning: winningIndexes.has(chronologicalIndex),
+      losing: losingIndexes.has(chronologicalIndex)
+    }
+  })
+
+  return {
+    allNumbersFromStart,
+    items,
+    summary
   }
 }

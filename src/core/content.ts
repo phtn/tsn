@@ -41,6 +41,7 @@ type CapturedRouletteMessage = EvoMessage | PragmaticPlayMessage
 let lastChipSignature = ''
 let lastRecentNumbersSignature = ''
 let lastEvoluReviewNumbersSignature = ''
+let lastEvolutionTableName = ''
 let lastLobbyHistoriesSignature = ''
 
 const script = document.createElement('script')
@@ -1126,7 +1127,12 @@ async function saveRouletteResult(result: RouletteSpinResult): Promise<void> {
         results = results.slice(-1000)
       }
 
-      chrome.storage.local.set({ rouletteResults: summarizeRouletteResults(results) }, () => {
+      const tableName = result.source === 'evolution' ? result.tableName?.trim() : ''
+      const storageUpdate = tableName
+        ? { rouletteResults: summarizeRouletteResults(results), evolutionTableName: tableName }
+        : { rouletteResults: summarizeRouletteResults(results) }
+
+      chrome.storage.local.set(storageUpdate, () => {
         resolve()
       })
     })
@@ -1425,6 +1431,14 @@ function syncEvolutionChips(): void {
   chrome.storage.local.set({ evolutionChips: values })
 }
 
+function syncEvolutionTableName(): void {
+  const tableName = deepQuery(document, '[data-role="table-name"]')?.textContent?.trim() ?? ''
+  if (!tableName || tableName === lastEvolutionTableName) return
+
+  lastEvolutionTableName = tableName
+  chrome.storage.local.set({ evolutionTableName: tableName })
+}
+
 function scrapeRecentNumbers(): { recent: number[]; history: number[] } {
   const drawer = deepQuery(document, '[data-role="statistic-drawer"]')
   const scope: ParentNode = drawer ?? document
@@ -1522,6 +1536,7 @@ function initEvolutionChipCapture(): void {
 
   const observer = new MutationObserver(() => {
     syncEvolutionChips()
+    syncEvolutionTableName()
     syncRebetVisible()
     syncBettingOpen()
     syncRecentNumbers()
@@ -1539,6 +1554,7 @@ function initEvolutionChipCapture(): void {
     'load',
     () => {
       syncEvolutionChips()
+      syncEvolutionTableName()
       syncRebetVisible()
       syncBettingOpen()
       syncRecentNumbers()
@@ -1547,6 +1563,7 @@ function initEvolutionChipCapture(): void {
     { once: true }
   )
   syncEvolutionChips()
+  syncEvolutionTableName()
   syncRebetVisible()
   syncBettingOpen()
   syncRecentNumbers()

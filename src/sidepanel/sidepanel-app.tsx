@@ -34,6 +34,7 @@ import {
 } from '../types/roulette'
 import { EMPTY_TENNIS_STORED_DATA, normalizeTennisStoredData, type TennisStoredData } from '../types/tennis'
 import { RouletteWorkspace } from './components/roulette/roulette-workspace'
+import { findRtnTableByName } from './components/roulette/tables'
 import { type GameClassView } from './components/shared/game-class-switcher'
 import { MainHeader } from './components/shared/header'
 import { getNetTone } from './lib/formatters'
@@ -93,6 +94,7 @@ const App = () => {
   const [evolutionReviewCombinedNumbers, setEvolutionReviewCombinedNumbers] = useState<number[]>([])
   const [lastEvoluReviewNumbersSignature, setLastEvoluReviewNumbersSignature] = useState<string>('')
   const [evolutionTableState, setEvolutionTableState] = useState<TableState | null>(null)
+  const [evolutionTableId, setEvolutionTableId] = useState<string | null>(null)
   const [evolutionTableName, setEvolutionTableName] = useState<string | null>(null)
   const [evolutionLobbyHistories, setEvolutionLobbyHistories] = useState<EvolutionLobbyHistory[]>([])
   const [evolutionLobbyHistoriesCapture, setEvolutionLobbyHistoriesCapture] =
@@ -196,7 +198,19 @@ const App = () => {
           typeof data.evolutionTableName === 'string' && data.evolutionTableName.trim().length > 0
             ? data.evolutionTableName.trim()
             : null
-        const activeTableRecentNumbers = getEvolutionRecentNumbersForTable(recentNumbers, lobbyHistories, tableName)
+        const knownTable = findRtnTableByName(
+          tableName,
+          lobbyHistories.map(({ tableId }) => tableId)
+        )
+        const activeTableHistory = knownTable
+          ? lobbyHistories.find(({ tableId }) => tableId === knownTable.id) ?? null
+          : null
+        const activeTableRecentNumbers = getEvolutionRecentNumbersForTable(
+          recentNumbers,
+          lobbyHistories,
+          knownTable?.name ?? tableName,
+          activeTableHistory?.tableId
+        )
         const lobbyHistoriesCapture = normalizeRouletteLobbyHistoriesCapture(data.evolutionLobbyHistoriesCapture)
         const lobbyHistoriesSignature = JSON.stringify(lobbyHistories)
         startTransition(() => {
@@ -223,7 +237,8 @@ const App = () => {
           setEvolutionTableState(
             typeof data.evolutionTableState === 'string' ? (data.evolutionTableState as TableState) : null
           )
-          setEvolutionTableName(tableName)
+          setEvolutionTableId(knownTable?.id ?? null)
+          setEvolutionTableName(knownTable?.name ?? tableName)
           setEvolutionLobbyHistories(lobbyHistories)
           setEvolutionLobbyHistoriesCapture((prev) => {
             if (lobbyHistoriesCapture) {
@@ -586,6 +601,7 @@ const App = () => {
           evolutionReviewStatisticsNumbers={evolutionReviewStatisticsNumbers}
           evolutionReviewCombinedNumbers={evolutionReviewCombinedNumbers}
           lastEvoluReviewNumbersSignature={lastEvoluReviewNumbersSignature}
+          evolutionTableId={evolutionTableId}
           evolutionTableState={evolutionTableState}
           evolutionTableName={evolutionTableName}
           evolutionLobbyHistories={evolutionLobbyHistories}
